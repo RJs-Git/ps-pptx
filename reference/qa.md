@@ -1,95 +1,71 @@
-# ps-pptx QA
+# ps-pptx QA reference
 
-All checks are mandatory. Any failure → fix and re-run. Run all of them, even when you "know" it's fine.
+QA for ps-pptx decks runs through three independent gates. **All three are mandatory.** Skipping any of them is the failure mode that lets visibly broken decks ship.
 
-## 1. Brand lint — colors
+## Gate 1 — Runtime guards (build-time)
 
-Find any hex literal in your script that isn't a PS-allowed color or a token reference:
+Triggered automatically when you run `node your_deck.js`. The helpers in `theme/index.js` throw on:
 
-```bash
-grep -nE '"[0-9A-Fa-f]{6}"' your_deck.js \
-  | grep -viE 'E90130|AE0021|FA8C9A|000000|FFFFFF|6B6B6B|D9D9D9|BBBBBB'
-```
+| Check | Helper(s) | Error fragment |
+|---|---|---|
+| Off-palette `color` / `fill` / `line` | all | `color "<hex>" is not in the PS palette` |
+| Off-table title size | `addH1` | `fontSize <n> is not in the §5 title-size table` |
+| H1 / footer color outside RED/WHITE/BLACK | `addH1`, `addFooter` | `color must be RED, WHITE, or BLACK` |
+| Body fontSize outside 10–12pt | `addBody` | `outside the body range 10–12pt` (pass `{ display: true }` for oversized stats) |
+| Off-margin or off-slide box | `addBody`, `addBox` | `crosses left/right margin`, `extends off the slide` |
+| Footer-band collision | `addBody`, `addBox` | `crosses the footer band (>6.75)` |
+| Logo + subhead tag on same slide | `addLogo`, `addSubheadTag` | `Logo and subhead tag overlap` |
+| Missing footer on a content slide | `writeDeck` | `slide N: missing addFooter` |
 
-Must return zero lines. If you see hits, replace the literal with the matching token (`RED`, `WHITE`, `CHART_GRAY`, etc.).
+If a guard fires:
+- **Fix the deck**, not the guard. The thresholds reflect the brand spec; loosening them creates the inconsistencies this skill exists to prevent.
+- If you genuinely need a layout exception (e.g., a full-bleed image), pass `{ fullBleed: true }` to `addBox`. Document why in a comment.
+- For non-content slides (covers, dividers, "Thank you", end cards), call `markRole(slide, "cover" | "section-divider" | "thank-you" | "end-card")` to exempt them from the footer requirement.
 
-## 2. Brand lint — fonts
+The deck **must build cleanly** before moving to gate 2.
 
-Every `fontFace` must reference a token, never a string literal:
-
-```bash
-grep -nE 'fontFace\s*:' your_deck.js \
-  | grep -viE 'FONT_TITLE|FONT_BODY|FONT_MONO|FONT_MONO_LIGHT'
-```
-
-Must return zero lines.
-
-## 3. Footer presence
-
-```bash
-slides=$(grep -c 'pres\.addSlide()' your_deck.js)
-footers=$(grep -c 'addFooter(' your_deck.js)
-echo "slides=$slides footers=$footers"
-```
-
-`footers` should be within 3–4 of `slides` (covers + end cards are the only legitimate omissions). If the gap is larger, you're missing footers on content slides.
-
-## 4. Content QA (extraction)
-
-Same as parent `pptx` skill:
+## Gate 2 — Static lint (qa.js)
 
 ```bash
-python -m markitdown your_deck.pptx
-python -m markitdown your_deck.pptx | grep -iE 'xxxx|lorem|ipsum|TBD|placeholder'
+node ~/.claude/skills/ps-pptx/theme/qa.js your_deck.js your_deck.pptx
 ```
 
-The grep must return zero lines (no leftover scaffolding text).
+What it checks (beyond the runtime guards, since some violations live in raw `addText` / `addShape` calls that bypass the helpers):
 
-## 5. Visual QA
+- **Palette**: any 6-digit hex literal not in the PS palette.
+- **Fonts**: any `fontFace:` set to a string literal instead of a `FONT_*` token.
+- **Logo / subhead-tag collision**: scans each `pres.addSlide()` block.
+- **Footer count vs slide count**: warns if the gap exceeds 4 slides.
+- **Forbidden patterns**: gradients, custom bullet markers (▶ ● ✓), drop shadows.
 
-Convert and inspect (per parent `pptx` skill):
+Outputs:
+- `qa-report/slide-NN.jpg` — one JPG per slide at 150 DPI.
+- `qa-report/SUBAGENT_PROMPT.md` — pre-filled fresh-eyes prompt with auto-extracted per-slide "Expected:" lines.
+- Exits non-zero on any lint failure.
+
+If the JPG render fails, qa.js reports a warning (not an error). Install LibreOffice + poppler, or re-run the conversion manually:
 
 ```bash
-python ~/.claude/skills/pptx/scripts/office/soffice.py --headless --convert-to pdf your_deck.pptx
-pdftoppm -jpeg -r 150 your_deck.pdf slide
+python3 ~/.claude/skills/pptx/scripts/office/soffice.py --headless --convert-to pdf --outdir qa-report your_deck.pptx
+pdftoppm -jpeg -r 150 qa-report/your_deck.pdf qa-report/slide
 ```
 
-Then dispatch a fresh-eyes subagent with this prompt (PS-specific additions in **bold**):
+## Gate 3 — Visual QA via fresh-eyes subagent (mandatory)
 
-```
-Visually inspect these slides. Assume there are issues — find them.
+You have been staring at the code; you will see what you expect, not what's there. The subagent reads the slides cold.
 
-Look for:
-- Overlapping elements, text overflow, cut-off content
-- Decorative lines positioned for single-line text but title wrapped
-- Footers/page numbers colliding with content
-- Insufficient margins (< 0.5") or uneven gaps
-- Low-contrast text (light gray on cream, dark on dark)
-- Leftover placeholder content (Lorem, XXXX, TBD)
+Dispatch a `general-purpose` subagent with the contents of `qa-report/SUBAGENT_PROMPT.md`. The prompt is already filled in — slide paths, expected descriptions, and the full "Look for" / "PS-brand hard failures" checklist.
 
-**Hard failures (PS-specific — flag these explicitly):**
-- **Any color outside the PS palette: RED #E90130, RED_DARK #AE0021,
-  PINK #FA8C9A, black, white, GRAY_MID #6B6B6B, GRAY_LIGHT #D9D9D9,
-  CHART_GRAY #BBBBBB (chart middle series only).**
-- **Any font other than Lexend Deca SemiBold, Roboto, Roboto Mono Medium,
-  or Roboto Mono Light.**
-- **Any non-cover/non-end-card slide missing the standard footer
-  (© Publicis Sapient + date + page number).**
-- **Accent lines under titles (forbidden in the PS template).**
-- **Custom bullet markers (▶ ● ✓) — PS uses bare numbered/lettered styles.**
+When the subagent reports:
+1. Treat any "hard failure" (palette, font, footer, accent line, bullet marker, logo+tag collision) as blocking.
+2. Treat layout/contrast issues as blocking unless you can justify a deliberate exception.
+3. Fix → re-run `node your_deck.js` → re-run `qa.js` → re-dispatch the subagent on the affected slides.
+4. **Do not declare success on the first pass.** A clean first dispatch usually means the subagent didn't look hard enough — re-prompt with "look again, more critically" before accepting it.
 
-For each slide, list issues. Report ALL, including minor.
+## Why three gates
 
-Read and analyze:
-1. /path/to/slide-01.jpg (Expected: [brief description])
-2. /path/to/slide-02.jpg (Expected: [brief description])
-…
-```
+- **Runtime guards** catch most violations the moment the deck is written, with a stack trace pointing at the offending line. They cannot be skipped.
+- **Static lint** catches violations that bypass the helpers (raw `s.addText` / `s.addShape` calls, hex literals in comments-turned-code, etc.).
+- **Visual QA** catches everything geometric or perceptual that lint cannot see: text overflow, awkward wrapping, low-contrast pairings, alignment drift, decorative elements positioned for the wrong title length.
 
-## 6. Verification loop
-
-1. Lint (1–3) → fix → re-lint
-2. Render → visual QA (5) → fix → re-render affected slides
-3. Repeat until a full pass finds no new issues
-
-Do not declare success until at least one full fix-and-verify cycle has completed.
+Each layer catches what the others miss. Skipping any one leaves a class of defects undetected.

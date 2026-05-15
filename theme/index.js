@@ -6,6 +6,10 @@
  * subhead tag). Both `build_deck.js` (the golden reference) and any deck
  * generated under the ps-pptx skill MUST `require('./ps_theme.js')` and use
  * these tokens/helpers — never inline hex codes or font strings.
+ *
+ * Helpers throw on brand violations (palette, fonts, title sizes, logo/tag
+ * collision, layout bounds). This is intentional: invalid decks should fail
+ * at `node your_deck.js` rather than slip past visual QA.
  */
 
 const path = require("path");
@@ -21,6 +25,7 @@ const GRAY_LIGHT = "D9D9D9";
 const CHART_GRAY = "BBBBBB"; // middle series in 3-series PS bar chart only
 
 const ALLOWED_COLORS = [RED, RED_DARK, PINK, BLACK, WHITE, GRAY_MID, GRAY_LIGHT, CHART_GRAY];
+const ALLOWED_COLORS_SET = new Set(ALLOWED_COLORS.map(c => c.toUpperCase()));
 
 // ─── Typography — the ONLY fonts permitted in PS decks ───────────────────────
 const FONT_TITLE      = "Lexend Deca SemiBold";
@@ -29,6 +34,7 @@ const FONT_MONO       = "Roboto Mono Medium";
 const FONT_MONO_LIGHT = "Roboto Mono Light";
 
 const ALLOWED_FONTS = [FONT_TITLE, FONT_BODY, FONT_MONO, FONT_MONO_LIGHT];
+const ALLOWED_FONTS_SET = new Set(ALLOWED_FONTS);
 
 // ─── Layout geometry — 16:9 widescreen 13.333" × 7.5" ────────────────────────
 const W = 13.333;
@@ -36,6 +42,10 @@ const H = 7.5;
 const MARGIN_L = 0.667;
 const MARGIN_R = 0.667;
 const CONTENT_W = W - MARGIN_L - MARGIN_R; // 12.0
+
+const TITLE_BAND_TOP = 0.758;
+const TITLE_BAND_BOTTOM = 1.97;
+const FOOTER_BAND_TOP = 6.75; // footer text top at 6.875; leave 0.125" gap above it
 
 // Master placeholder positions (from slideMaster1.xml, EMU → inches)
 const LOGO_X = 0.667, LOGO_Y = 0.667, LOGO_W = 1.149, LOGO_H = 0.624;
@@ -48,6 +58,70 @@ const LOGO_COLOR = path.join(__dirname, "assets", "logos", "ps-logo-color.png");
 const LOGO_BLACK = path.join(__dirname, "assets", "logos", "ps-logo-black.png");
 const MEDIA = (n) => path.join(__dirname, "assets", "media", n);
 
+// ─── Title-size whitelist (§5 of SKILL.md) ────────────────────────────────────
+const TITLE_SIZES = new Set([26, 32, 36, 38, 54, 56, 66, 72, 96]);
+
+// ─── Per-slide tracking via symbols ──────────────────────────────────────────
+const SLIDE_META = Symbol.for("ps-pptx.slide-meta");
+const PRES_REGISTRY = Symbol.for("ps-pptx.pres-registry");
+
+function meta(slide) {
+  if (!slide[SLIDE_META]) slide[SLIDE_META] = { logo: false, tag: false, footer: false, role: null };
+  return slide[SLIDE_META];
+}
+
+function registerSlide(pres, slide) {
+  if (!pres[PRES_REGISTRY]) pres[PRES_REGISTRY] = [];
+  if (!pres[PRES_REGISTRY].includes(slide)) pres[PRES_REGISTRY].push(slide);
+}
+
+/**
+ * Tag a slide's role so writeDeck/validateDeck knows whether to require a footer.
+ *   "cover" | "section-divider" | "thank-you" | "end-card"
+ * All other slides are treated as "content" and MUST have a footer.
+ */
+function markRole(slide, role) {
+  const valid = ["cover", "section-divider", "thank-you", "end-card", "content"];
+  if (!valid.includes(role)) {
+    throw new Error(`[ps-pptx] markRole: role must be one of ${valid.join(", ")}, got "${role}"`);
+  }
+  meta(slide).role = role;
+}
+
+function checkColor(name, val) {
+  if (val == null) return;
+  const v = String(val).replace(/^#/, "").toUpperCase();
+  if (!ALLOWED_COLORS_SET.has(v)) {
+    throw new Error(
+      `[ps-pptx] ${name}: color "${val}" is not in the PS palette. ` +
+      `Allowed: RED(E90130) RED_DARK(AE0021) PINK(FA8C9A) BLACK WHITE GRAY_MID(6B6B6B) GRAY_LIGHT(D9D9D9) CHART_GRAY(BBBBBB).`
+    );
+  }
+}
+
+function checkFont(name, val) {
+  if (val == null) return;
+  if (!ALLOWED_FONTS_SET.has(val)) {
+    throw new Error(
+      `[ps-pptx] ${name}: fontFace "${val}" is not in the PS type system. ` +
+      `Use one of FONT_TITLE | FONT_BODY | FONT_MONO | FONT_MONO_LIGHT.`
+    );
+  }
+}
+
+function checkBounds(name, x, y, w, h, opts = {}) {
+  if (opts.fullBleed) return;
+  const eps = 0.01;
+  if (x < MARGIN_L - eps) throw new Error(`[ps-pptx] ${name}: x=${x} crosses left margin (${MARGIN_L}). Pass { fullBleed: true } if intentional.`);
+  if (x + w > W - MARGIN_R + eps) throw new Error(`[ps-pptx] ${name}: x+w=${(x + w).toFixed(3)} crosses right margin (${(W - MARGIN_R).toFixed(3)}).`);
+  if (y + h > FOOTER_BAND_TOP + eps && !opts.overFooter) {
+    throw new Error(`[ps-pptx] ${name}: y+h=${(y + h).toFixed(3)} crosses the footer band (>${FOOTER_BAND_TOP}). The footer text sits at y=6.875; content past that collides with it.`);
+  }
+  if (y < 0 - eps || y + h > H + eps) {
+    throw new Error(`[ps-pptx] ${name}: box y=${y}..${(y + h).toFixed(3)} extends off the slide (0–${H}).`);
+  }
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function addLogo(slide, variant = "white") {
   const v = String(variant).toLowerCase();
@@ -55,13 +129,24 @@ function addLogo(slide, variant = "white") {
     v === "color" || v === "split" ? LOGO_COLOR :
     v === "black" || v === "000000" ? LOGO_BLACK :
     LOGO_WHITE;
+  const m = meta(slide);
+  if (m.tag) {
+    throw new Error(`[ps-pptx] addLogo: this slide already has addSubheadTag. Logo and subhead tag overlap (both at x=0.667, y≈0.5–1.3) and must not coexist. Use addLogo on covers/dividers/end-cards; use addSubheadTag on content slides.`);
+  }
+  m.logo = true;
   slide.addImage({ path: file, x: LOGO_X, y: LOGO_Y, w: LOGO_W, h: LOGO_H });
 }
 
 function addFooter(slide, opts = {}) {
   const color = opts.color || RED;
+  checkColor("addFooter", color);
+  const cu = color.replace(/^#/, "").toUpperCase();
+  if (cu !== RED && cu !== WHITE && cu !== BLACK) {
+    throw new Error(`[ps-pptx] addFooter: color must be RED, WHITE, or BLACK. Got ${color}.`);
+  }
   const dateText = opts.dateText || "XX.2026";
   const pageNum = opts.pageNum;
+  meta(slide).footer = true;
   slide.addText(
     [
       { text: "© Publicis Sapient", options: {} },
@@ -82,6 +167,12 @@ function addFooter(slide, opts = {}) {
 }
 
 function addSubheadTag(slide, text, color = RED) {
+  checkColor("addSubheadTag", color);
+  const m = meta(slide);
+  if (m.logo) {
+    throw new Error(`[ps-pptx] addSubheadTag: this slide already has addLogo. They overlap and must not coexist. Remove the addLogo call or move it to a cover/divider/end-card slide.`);
+  }
+  m.tag = true;
   slide.addText(text, {
     x: LOGO_X, y: 0.483, w: 6, h: 0.184, fontFace: FONT_MONO, fontSize: 10,
     color, charSpacing: -0.5, margin: 0, valign: "bottom",
@@ -89,36 +180,148 @@ function addSubheadTag(slide, text, color = RED) {
 }
 
 function addH1(slide, text, opts = {}) {
+  const fontSize = opts.fontSize || 38;
+  const color = opts.color || RED;
+  checkColor("addH1", color);
+  const cu = color.replace(/^#/, "").toUpperCase();
+  if (cu !== RED && cu !== WHITE && cu !== BLACK) {
+    throw new Error(`[ps-pptx] addH1: title color must be RED, WHITE, or BLACK. Got ${color}.`);
+  }
+  if (!TITLE_SIZES.has(fontSize)) {
+    throw new Error(
+      `[ps-pptx] addH1: fontSize ${fontSize} is not in the §5 title-size table. ` +
+      `Allowed: 26 (dense), 32 (long), 36 (card/in-image headline), 38 (default), 54 (cover-3line), 56 (thank-you), 66 (cover-2line), 72 (cover-1line), 96 (section-divider). ` +
+      `If the headline doesn't fit one of these roles, rewrite the headline — don't invent a size.`
+    );
+  }
   slide.addText(text, {
     x: opts.x != null ? opts.x : MARGIN_L,
     y: opts.y != null ? opts.y : 0.758,
     w: opts.w != null ? opts.w : CONTENT_W,
     h: opts.h != null ? opts.h : 1.21,
     fontFace: FONT_TITLE,
-    fontSize: opts.fontSize || 38,
-    color: opts.color || RED,
+    fontSize,
+    color,
     bold: true,
+    align: opts.align,
+    valign: opts.valign || "top",
     margin: 0,
-    valign: "top",
     lineSpacingMultiple: 1.05,
     charSpacing: -0.5,
   });
 }
 
 function addBody(slide, text, opts = {}) {
+  const fontSize = opts.fontSize || 12;
+  const color = opts.color || BLACK;
+  checkColor("addBody", color);
+  if (!opts.display && (fontSize < 10 || fontSize > 12)) {
+    throw new Error(`[ps-pptx] addBody: fontSize ${fontSize} is outside the body range 10–12pt. For oversized stats/numerals, pass { display: true } and consider using FONT_MONO_LIGHT or FONT_TITLE directly via addBox.`);
+  }
+  const x = opts.x != null ? opts.x : MARGIN_L;
+  const y = opts.y != null ? opts.y : 3.4;
+  const w = opts.w != null ? opts.w : CONTENT_W;
+  const h = opts.h != null ? opts.h : 3.2;
+  if (!opts.skipBoundsCheck) checkBounds("addBody", x, y, w, h, opts);
   slide.addText(text, {
-    x: opts.x != null ? opts.x : MARGIN_L,
-    y: opts.y != null ? opts.y : 3.4,
-    w: opts.w != null ? opts.w : CONTENT_W,
-    h: opts.h != null ? opts.h : 3.2,
-    fontFace: FONT_BODY,
-    fontSize: opts.fontSize || 12,
-    color: opts.color || BLACK,
+    x, y, w, h,
+    fontFace: opts.fontFace || FONT_BODY,
+    fontSize,
+    color,
+    bold: !!opts.bold,
+    italic: !!opts.italic,
+    align: opts.align,
+    valign: opts.valign || "top",
     margin: 0,
-    valign: "top",
     paraSpaceAfter: opts.paraSpaceAfter || 8,
-    lineSpacingMultiple: 1.25,
+    lineSpacingMultiple: opts.lineSpacingMultiple || 1.25,
   });
+}
+
+/**
+ * Bounds-checked text/shape wrapper. Use for any element you compose by hand
+ * (callout cards, oversized display stats, sidebar columns) so the layout
+ * still gets margin/title-band/footer-band validation. For text, pass
+ * `text` and `textOpts`; for a filled shape, pass `shape` ("rect", "ellipse", …)
+ * and `shapeOpts`.
+ */
+function addBox(slide, opts) {
+  if (!opts || opts.x == null || opts.y == null || opts.w == null || opts.h == null) {
+    throw new Error(`[ps-pptx] addBox: requires { x, y, w, h }.`);
+  }
+  checkBounds("addBox", opts.x, opts.y, opts.w, opts.h, opts);
+  if (opts.fill) checkColor("addBox.fill", opts.fill.color || opts.fill);
+  if (opts.line) checkColor("addBox.line", opts.line.color || opts.line);
+  if (opts.shape) {
+    slide.addShape(opts.shape, {
+      x: opts.x, y: opts.y, w: opts.w, h: opts.h,
+      fill: opts.fill, line: opts.line,
+    });
+  }
+  if (opts.text != null) {
+    const t = opts.textOpts || {};
+    checkFont("addBox.fontFace", t.fontFace);
+    checkColor("addBox.text.color", t.color);
+    slide.addText(opts.text, {
+      x: opts.x, y: opts.y, w: opts.w, h: opts.h,
+      fontFace: t.fontFace || FONT_BODY,
+      fontSize: t.fontSize || 12,
+      color: t.color || BLACK,
+      bold: !!t.bold,
+      italic: !!t.italic,
+      align: t.align,
+      valign: t.valign || "top",
+      margin: t.margin != null ? t.margin : 0,
+      paraSpaceAfter: t.paraSpaceAfter,
+      lineSpacingMultiple: t.lineSpacingMultiple || 1.25,
+      charSpacing: t.charSpacing,
+    });
+  }
+}
+
+/**
+ * Wrap pres.addSlide so every slide auto-registers in pres[PRES_REGISTRY].
+ * Call once after `new PptxGenJS()`. Idempotent.
+ */
+function instrument(pres) {
+  if (pres.__psInstrumented) return pres;
+  const orig = pres.addSlide.bind(pres);
+  pres.addSlide = function (...args) {
+    const s = orig(...args);
+    registerSlide(pres, s);
+    return s;
+  };
+  pres.__psInstrumented = true;
+  return pres;
+}
+
+/**
+ * Validate every registered slide. Throws on any failure with a list of
+ * offending slide indices. Call before pres.writeFile, or use writeDeck.
+ */
+function validateDeck(pres) {
+  const slides = pres[PRES_REGISTRY] || [];
+  const errors = [];
+  slides.forEach((s, i) => {
+    const m = meta(s);
+    const idx = i + 1;
+    if (m.logo && m.tag) errors.push(`slide ${idx}: addLogo and addSubheadTag both used (overlap)`);
+    const skipsFooter = m.role === "cover" || m.role === "thank-you" || m.role === "end-card";
+    if (!skipsFooter && !m.footer) {
+      errors.push(`slide ${idx}: missing addFooter (mark covers/closers via markRole(slide, "cover"|"thank-you"|"end-card") if intentional)`);
+    }
+  });
+  if (errors.length) {
+    throw new Error(`[ps-pptx] validateDeck failed:\n  ${errors.join("\n  ")}`);
+  }
+}
+
+/**
+ * Validate then write. Preferred over pres.writeFile for PS decks.
+ */
+async function writeDeck(pres, fileName) {
+  validateDeck(pres);
+  return pres.writeFile({ fileName });
 }
 
 module.exports = {
@@ -130,8 +333,11 @@ module.exports = {
   LOGO_X, LOGO_Y, LOGO_W, LOGO_H,
   FOOTER_X, FOOTER_Y, FOOTER_W, FOOTER_H,
   PAGE_X, PAGE_Y, PAGE_W, PAGE_H,
+  TITLE_BAND_TOP, TITLE_BAND_BOTTOM, FOOTER_BAND_TOP,
   // assets
   LOGO_WHITE, LOGO_COLOR, LOGO_BLACK, MEDIA,
   // helpers
-  addLogo, addFooter, addSubheadTag, addH1, addBody,
+  addLogo, addFooter, addSubheadTag, addH1, addBody, addBox,
+  // deck-level
+  markRole, instrument, validateDeck, writeDeck,
 };

@@ -194,7 +194,7 @@ sectionTitle("03", 12);
   });
   const para = "Two column text slide ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.";
   for (let i = 0; i < 3; i++) {
-    addBody(s, para, { x: COL_X[i], y: 4.85, w: COL_W, h: 2.0, fontSize: 11 });
+    addBody(s, para, { x: COL_X[i], y: 4.85, w: COL_W, h: 1.9, fontSize: 11 });
   }
   addFooter(s, { pageNum: 15 });
 }
@@ -341,7 +341,7 @@ halfImageSlides.forEach(it => {
   addH1(s, "Headline or title");
   s.addText("Subhead lorem ipsum", { x: 0.667, y: 3.05, w: 6, h: 0.4, fontFace: FONT_BODY, fontSize: 11, color: BLACK, margin: 0 });
   const lorem = "One column text slide lorem dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.";
-  addBody(s, lorem, { x: 0.667, y: 3.5, w: 5.9, h: 3.3, fontSize: 11 });
+  addBody(s, lorem, { x: 0.667, y: 3.5, w: 5.9, h: 3.25, fontSize: 11 });
   if (fs.existsSync(MEDIA(it.img))) {
     s.addImage({ path: MEDIA(it.img), x: 7.6, y: 0, w: W - 7.6, h: H });
   } else {
@@ -358,7 +358,7 @@ halfImageSlides.forEach(it => {
   s.addShape("rect", { x: 6.8, y: 0.667, w: 5.866, h: 5.95, fill: { color: GRAY_LIGHT }, line: { type: "none" } });
   s.addText("Subhead lorem ipsum", { x: 0.667, y: 3.05, w: 6, h: 0.4, fontFace: FONT_BODY, fontSize: 11, color: BLACK, margin: 0 });
   addBody(s, "One column text slide lorem dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
-    { x: 0.667, y: 3.5, w: 5.9, h: 3.3, fontSize: 11 });
+    { x: 0.667, y: 3.5, w: 5.9, h: 3.25, fontSize: 11 });
   addFooter(s, { pageNum: 28 });
 }
 
@@ -382,7 +382,7 @@ halfImageSlides.forEach(it => {
   addH1(s, "Headline or\ntitle in three\nlines", { w: 4, h: 2.8, fontSize: 32 });
   s.addText("Subhead lorem ipsum", { x: 0.667, y: 4.4, w: 4.0, h: 0.4, fontFace: FONT_BODY, fontSize: 11, color: BLACK, margin: 0 });
   addBody(s, "One column text slide lorem dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex.",
-    { x: 0.667, y: 4.85, w: 4.0, h: 2.0, fontSize: 11 });
+    { x: 0.667, y: 4.85, w: 4.0, h: 1.9, fontSize: 11 });
   addFooter(s, { pageNum: 30 });
 }
 
@@ -393,7 +393,7 @@ halfImageSlides.forEach(it => {
   addH1(s, "Headline or title");
   s.addText("Subhead lorem ipsum", { x: 0.667, y: 3.0, w: 4.0, h: 0.4, fontFace: FONT_BODY, fontSize: 11, bold: false, color: BLACK, margin: 0 });
   addBody(s, "One column text slide lorem dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
-    { x: 0.667, y: 3.4, w: 4.0, h: 3.5, fontSize: 11 });
+    { x: 0.667, y: 3.4, w: 4.0, h: 3.35, fontSize: 11 });
   s.addShape("rect", { x: 5.96, y: 0.99, w: 3.25, h: 5.52, fill: { color: GRAY_LIGHT }, line: { type: "none" } });
   s.addShape("rect", { x: 9.41, y: 0.97, w: 3.26, h: 2.70, fill: { color: GRAY_LIGHT }, line: { type: "none" } });
   s.addShape("rect", { x: 9.41, y: 3.86, w: 3.26, h: 2.63, fill: { color: GRAY_LIGHT }, line: { type: "none" } });
@@ -433,7 +433,7 @@ halfImageSlides.forEach(it => {
   });
   const para = "Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.";
   for (let i = 0; i < 3; i++) {
-    addBody(s, para, { x: 0.667 + i * 4.15, y: 4.85, w: 3.7, h: 2.0, fontSize: 11 });
+    addBody(s, para, { x: 0.667 + i * 4.15, y: 4.85, w: 3.7, h: 1.9, fontSize: 11 });
   }
   addFooter(s, { pageNum: 34 });
 }
@@ -445,7 +445,7 @@ halfImageSlides.forEach(it => {
   addH1(s, "Headline lorem ipsum\ncillum dolore sit amet\nfugiat nulla pariatur\nexcepteur sint", { w: 5.7, h: 3.6, fontSize: 32 });
   s.addText("Subhead", { x: 6.867, y: 4.2, w: 4, h: 0.3, fontFace: FONT_TITLE, fontSize: 11, bold: true, color: BLACK, margin: 0 });
   addBody(s, "One column text slide lorem dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
-    { x: 6.867, y: 4.65, w: 5.8, h: 2.2, fontSize: 11 });
+    { x: 6.867, y: 4.65, w: 5.8, h: 2.1, fontSize: 11 });
   addFooter(s, { pageNum: 35 });
 }
 

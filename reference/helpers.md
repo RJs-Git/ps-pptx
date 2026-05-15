@@ -4,6 +4,8 @@ Imported via `require(".../skills/ps-pptx/theme")`. Resolves to `theme/index.js`
 
 All helpers take a `slide` (from `pres.addSlide()`) as their first argument. All defaults match the canonical PS layouts; override only what `theme/build_deck.js` overrides for the layout you're using.
 
+**Helpers throw on brand violations.** Off-palette colors, off-table title sizes, off-margin boxes, footer-band collisions, and logo+subhead-tag collisions all fail the build. The error message names the offending value and the rule. Fix the deck — never bypass.
+
 ## `addLogo(slide, variant = "white")`
 
 Places the PS logo at the master position (`x=0.667, y=0.667, 1.149 × 0.624`).
@@ -16,9 +18,11 @@ Places the PS logo at the master position (`x=0.667, y=0.667, 1.149 × 0.624`).
 
 Covers, "Thank you", and end-card slides override size — see those layouts in `theme/build_deck.js`.
 
+**Do not call `addLogo` on content slides.** The logo position (`y=0.667`) overlaps the subhead tag (`y=0.483`) and H1 (`y=0.758`) — the three share `x=0.667`. Use `addLogo` only on covers, section dividers, the "Thank you" closer, and end-card logo slides. Content slides use `addSubheadTag` (optional) instead. The two helpers are mutually exclusive on any given slide.
+
 ## `addSubheadTag(slide, text, color = RED)`
 
-Mono-font tag at the top of content slides. Pass `WHITE` on red backgrounds. Position is fixed: `x=0.667, y=0.483, w=6, h=0.184, fontSize=10`.
+Mono-font tag at the top of content slides. Pass `WHITE` on red backgrounds. Position is fixed: `x=0.667, y=0.483, w=6, h=0.184, fontSize=10`. Never combine with `addLogo` on the same slide — they overlap.
 
 ## `addH1(slide, text, opts = {})`
 
@@ -41,6 +45,18 @@ Defaults: `x=MARGIN_L, y=3.4, w=CONTENT_W, h=3.2, paraSpaceAfter=8, lineSpacingM
 
 `opts`: `x`, `y`, `w`, `h`, `fontSize` (often `10` or `11`), `color`, `paraSpaceAfter`. On red backgrounds pass `color: WHITE`.
 
+## `addBox(slide, opts)`
+
+Bounds-checked wrapper for any custom card, callout, or display element you compose by hand. Validates margins, footer-band collision, palette, and fonts.
+
+Required: `x`, `y`, `w`, `h`. Optional:
+- `shape` (`"rect"`, `"ellipse"`, …) + `fill` + `line` — draws a shape.
+- `text` + `textOpts` ({ `fontFace`, `fontSize`, `color`, `bold`, `italic`, `align`, `valign`, `paraSpaceAfter`, `lineSpacingMultiple`, `charSpacing` }) — draws text in the same box.
+- `fullBleed: true` — exempt from margin checks (full-bleed images / colored bands only).
+- `overFooter: true` — exempt from footer-band check (the footer helper itself; never use elsewhere).
+
+Use `addBox` for oversized stat numerals, framework boxes, callout cards — anything that would otherwise be a raw `s.addShape` / `s.addText` call. Raw calls bypass validation and are flagged by `qa.js` static lint.
+
 ## `addFooter(slide, opts = {})`
 
 Renders `© Publicis Sapient` + tab + date at `(0.667, 6.875)` and (if `pageNum` provided) the page number at `(12.038, 6.875)`. Uses `FONT_MONO` 8pt.
@@ -50,6 +66,27 @@ Renders `© Publicis Sapient` + tab + date at `(0.667, 6.875)` and (if `pageNum`
 | `color` | `RED` | Pass `WHITE` on red backgrounds |
 | `pageNum` | `undefined` | Set to the slide's page number; covers/end-cards omit |
 | `dateText` | `"XX.2026"` | Replace with actual `MM.YYYY` for the deck |
+
+## Deck-level: `instrument`, `markRole`, `writeDeck`, `validateDeck`
+
+```js
+const pres = instrument(new PptxGenJS()); // wraps pres.addSlide for tracking
+pres.layout = "LAYOUT_WIDE";
+
+// …slides…
+
+// Tag non-content slides so they're exempt from the footer requirement:
+markRole(coverSlide, "cover");
+markRole(dividerSlide, "section-divider");
+markRole(thanksSlide, "thank-you");
+markRole(endCardSlide, "end-card");
+
+await writeDeck(pres, "deck.pptx"); // validates every slide, then writes
+```
+
+`writeDeck` calls `validateDeck` first; on failure it throws a list of offending slide indices (logo+tag collision, missing footer on a content slide). `validateDeck` is also exported if you want to validate without writing.
+
+`instrument` is idempotent — call it once on a fresh `PptxGenJS()` instance. If you forget, `validateDeck`/`writeDeck` will see zero registered slides and pass trivially; that defeats the gate, so always wrap with `instrument`.
 
 ## Tokens (also from `T`)
 
@@ -69,18 +106,21 @@ const T = require(path.join(require("os").homedir(), ".claude/skills/ps-pptx/the
 const {
   RED, WHITE, BLACK, FONT_TITLE, FONT_BODY, FONT_MONO,
   W, H, MARGIN_L, CONTENT_W,
-  addLogo, addFooter, addSubheadTag, addH1, addBody,
+  addLogo, addFooter, addSubheadTag, addH1, addBody, addBox,
+  instrument, markRole, writeDeck,
 } = T;
 
-const pres = new PptxGenJS();
+const pres = instrument(new PptxGenJS());
 pres.layout = "LAYOUT_WIDE";
 
 // Cover
 {
   const s = pres.addSlide();
+  markRole(s, "cover"); // exempt from footer requirement
   s.background = { color: RED };
   addLogo(s, "white");
   addH1(s, "Title goes here", { y: 3.0, fontSize: 72, color: WHITE });
+  // Covers may still carry a footer in white if the brand calls for it:
   addFooter(s, { color: WHITE, dateText: "05.2026" });
 }
 
@@ -93,5 +133,5 @@ pres.layout = "LAYOUT_WIDE";
   addFooter(s, { pageNum: 2, dateText: "05.2026" });
 }
 
-pres.writeFile({ fileName: "deck.pptx" }).then(console.log);
+(async () => { console.log(await writeDeck(pres, "deck.pptx")); })();
 ```

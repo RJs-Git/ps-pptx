@@ -7,9 +7,9 @@ description: Use when creating, editing, or generating any Publicis Sapient (PS)
 
 PS-themed deck generation. **Fundamentals are rigid; layout composition is yours.**
 
-The brand fundamentals below — colors, fonts, margins, title sizes, title placement, header (logo + subhead tag), footer — are **non-negotiable**. Inside those rails, you are expected to design slide layouts that fit the content, not pick from a fixed catalog. Use the `pptx` skill's design intuition to compose; use this skill's tokens and helpers for everything that touches the brand surface.
+The brand fundamentals below — colors, fonts, margins, title sizes, title placement, header (logo + subhead tag), footer — are **non-negotiable**. Inside those rails, you are expected to design slide layouts that fit the content, not pick from a fixed catalog. Use this skill's tokens and helpers for everything that touches the brand surface.
 
-**REQUIRED BACKGROUND:** Use the `pptx` skill for non-design workflows (reading content, image conversion, the visual-QA subagent loop). **`ps-pptx` OVERRIDES `pptx`'s "Color Palettes", "Typography", and "Design Ideas" sections in their entirety.**
+This skill is the **single point of entry** for PS-branded `.pptx` work — creating from scratch, editing existing decks, reading/extracting content, and visual QA.
 
 ---
 
@@ -47,13 +47,14 @@ Always reference via token, never the string literal.
 - Top safe zone above the title: `0.667"` (the logo / subhead-tag band).
 - Bottom safe zone below content: `0.625"` (the footer band, baseline at `y = 6.875`).
 
-### 4. Header band (top of every non-cover/non-end-card slide)
+### 4. Header band — logo and subhead tag are mutually exclusive
 
-- **Logo**: always at `(0.667, 0.667)`, size `1.149 × 0.624`. Placed via `addLogo(slide, variant)`.
-  - `"color"` on white backgrounds, `"white"` on red/black backgrounds, `"black"` for mono-on-white.
-- **Subhead tag** (optional but encouraged on content slides): mono 10pt at `(0.667, 0.483)`, placed via `addSubheadTag(slide, text, color?)`.
+The logo and the subhead tag occupy the same top-left region and **must never appear on the same slide**. They collide: the subhead tag sits at `y=0.483`, the logo at `y=0.667` (height `0.624`), and the H1 at `y=0.758`, all sharing `x=0.667`. Putting both on one slide overlaps the logo with the subhead and title — a visible brand defect.
 
-Logo and subhead tag positions never move on a content slide.
+- **Content slides** (anything with a title + body — the vast majority): use **`addSubheadTag(slide, text, color?)`** only. **Do NOT call `addLogo` on content slides.** Mono 10pt at `(0.667, 0.483)`. The subhead tag is optional; if omitted, the slide simply has no top-band element. The PS brand is carried by the footer (`© Publicis Sapient`) and the title color/typeface, not a per-slide logo.
+- **Covers, section dividers, "Thank you" closer, and end-card logo slides**: use **`addLogo(slide, variant)`** only — never paired with a subhead tag. Always at `(0.667, 0.667)`, size `1.149 × 0.624`. Variants: `"color"` on white, `"white"` on red/black, `"black"` for mono-on-white.
+
+If you catch yourself adding both to the same slide, stop — pick one based on the slide's role above.
 
 ### 5. Title placement & sizing
 
@@ -89,8 +90,14 @@ const {
   FONT_TITLE, FONT_BODY, FONT_MONO, FONT_MONO_LIGHT,
   W, H, MARGIN_L, MARGIN_R, CONTENT_W,
   LOGO_WHITE, LOGO_COLOR, LOGO_BLACK, MEDIA,
-  addLogo, addFooter, addSubheadTag, addH1, addBody,
+  addLogo, addFooter, addSubheadTag, addH1, addBody, addBox,
+  instrument, markRole, writeDeck,
 } = T;
+
+const pres = instrument(new PptxGenJS()); // enables per-slide validation
+pres.layout = "LAYOUT_WIDE";
+// …build slides…
+await writeDeck(pres, "deck.pptx"); // throws if any slide is non-compliant
 ```
 
 Node resolves `theme/` to `theme/index.js` automatically.
@@ -104,6 +111,11 @@ Node resolves `theme/` to `theme/index.js` automatically.
 | H1 / page title | `addH1(slide, text, opts?)` |
 | Body | `addBody(slide, text, opts?)` |
 | Footer | `addFooter(slide, { color?, pageNum?, dateText? })` |
+| Custom card / shape | `addBox(slide, { x, y, w, h, shape?, fill?, line?, text?, textOpts? })` |
+| Mark non-content slide role | `markRole(slide, "cover"\|"section-divider"\|"thank-you"\|"end-card")` |
+| Validate + write | `await writeDeck(pres, "out.pptx")` |
+
+**The helpers throw on brand violations at `node your_deck.js` time.** Off-palette colors, off-table title sizes, logo+subhead collisions, off-margin boxes, missing footers (for non-cover slides) — all fail the build with a specific error pointing at the line. **Do not catch or work around these errors — fix the deck.** If a helper rejects something you genuinely need, the right move is almost always to redesign the slide, not bypass the helper.
 
 Helper signatures + opts: load `reference/helpers.md` when writing the calls.
 
@@ -131,13 +143,84 @@ For inspiration and worked examples (43 reference compositions used in the canon
 
 ---
 
-## Workflow
+## Workflows
+
+Pick the workflow that matches the task. All paths share the same brand fundamentals above.
+
+### A. Creating a new PS deck from scratch
 
 1. **Plan the deck.** Outline slides with content + intent (what is this slide *doing*?). For each, decide the role: cover, section divider, content, callout, image, table, chart, closer.
 2. **Compose layouts.** For each slide, design a composition that serves the content. Skim `reference/layouts.md` for inspiration; copy a block from `theme/build_deck.js` if a reference fits exactly. Otherwise compose using helpers + tokens. Helper API: `reference/helpers.md`.
-3. **Write the script** using the imports block above. Title sizes must come from the §5 table; colors from §1; fonts from §2.
-4. **Run**: `node your_deck.js` → produces `.pptx`.
-5. **QA**: load `reference/qa.md` and run every check. Mandatory.
+3. **Write the script** using the imports block above. Title sizes must come from the §5 table; colors from §1; fonts from §2. Wrap `pres = instrument(new PptxGenJS())` and end with `await writeDeck(pres, …)` so per-slide validation runs. Tag covers / section dividers / "Thank you" / end-cards via `markRole(slide, …)` so they are exempted from the footer requirement.
+4. **Build**: `node your_deck.js`. The helpers throw on brand violations — if it errors, fix the offending call (the message names the file, line, and rule). Re-run until the build succeeds.
+5. **QA**: `node ~/.claude/skills/ps-pptx/theme/qa.js your_deck.js your_deck.pptx`. This is **the** QA command for decks built via this skill — runs all static lints, renders per-slide JPGs into `qa-report/`, and writes a pre-filled fresh-eyes prompt at `qa-report/SUBAGENT_PROMPT.md`. Exits non-zero on lint failure. Reference: `reference/qa.md`.
+6. **Visual QA — mandatory.** See §"Visual QA" below.
+
+### B. Editing an existing PS deck (XML route)
+
+Use this when the user gives you an existing `.pptx` and wants edits — content updates, slide reorders, deletions, or adding slides duplicated from existing layouts. For wholesale redesigns, prefer workflow A (rebuild from scratch).
+
+1. **Survey the deck**: render thumbnails and extract text in parallel.
+   ```bash
+   python ~/.claude/skills/ps-pptx/scripts/thumbnail.py input.pptx
+   python -m markitdown input.pptx
+   ```
+2. **Plan the changes** against the thumbnails + text. Identify which slides to keep, duplicate, reorder, delete, or edit.
+3. **Unpack**: `python ~/.claude/skills/ps-pptx/scripts/office/unpack.py input.pptx unpacked/`
+4. **Structural changes first** (do these yourself, not via subagents):
+   - Delete: remove `<p:sldId>` from `ppt/presentation.xml` → `<p:sldIdLst>`.
+   - Duplicate: `python ~/.claude/skills/ps-pptx/scripts/add_slide.py unpacked/ slideN.xml` — prints the `<p:sldId>` to insert.
+   - Reorder: rearrange `<p:sldId>` elements in `<p:sldIdLst>`.
+5. **Edit content** in each `slide{N}.xml` using the `Edit` tool (not sed/Python). Subagents are useful here — slides are independent files. Formatting rules:
+   - Bold headers/labels: `b="1"` on `<a:rPr>`.
+   - Smart quotes in new text: use XML entities (`&#x201C;` `&#x201D;` `&#x2018;` `&#x2019;`) — the Edit tool flattens unicode quotes.
+   - Multi-item content: separate `<a:p>` per item, copying `<a:pPr>` from the original to preserve spacing. Never concatenate.
+   - Leading/trailing whitespace in `<a:t>`: add `xml:space="preserve"`.
+   - **Brand check**: any color/font/size you introduce must come from §1, §2, §5. If a placeholder used an off-brand value, fix it.
+6. **Clean**: `python ~/.claude/skills/ps-pptx/scripts/clean.py unpacked/` (drops orphaned slides/media/rels).
+7. **Pack**: `python ~/.claude/skills/ps-pptx/scripts/office/pack.py unpacked/ output.pptx --original input.pptx`
+8. **Verify content**: `python -m markitdown output.pptx` — check for missing edits, leftover placeholders (`grep -iE "xxxx|lorem|ipsum|placeholder"`).
+9. **Visual QA — mandatory.** See §"Visual QA" below.
+
+### C. Reading / extracting from a PS deck
+
+```bash
+python -m markitdown deck.pptx                                   # full text dump
+python ~/.claude/skills/ps-pptx/scripts/thumbnail.py deck.pptx   # visual grid (thumbnails.jpg)
+python ~/.claude/skills/ps-pptx/scripts/office/unpack.py deck.pptx unpacked/  # raw XML
+```
+
+Use markitdown first; only unpack when you need XML structure (rare for read-only tasks).
+
+### Visual QA (applies to all workflows)
+
+For decks built via workflow A, `theme/qa.js` already renders slides and writes a pre-filled subagent prompt to `qa-report/SUBAGENT_PROMPT.md`. For decks edited via workflow B (or any arbitrary `.pptx`), render slides manually:
+
+```bash
+python ~/.claude/skills/ps-pptx/scripts/office/soffice.py --headless --convert-to pdf output.pptx
+pdftoppm -jpeg -r 150 output.pdf slide   # produces slide-01.jpg, slide-02.jpg, …
+```
+
+To re-render only changed slides after a fix: `pdftoppm -jpeg -r 150 -f N -l N output.pdf slide-fixed`.
+
+**Dispatch a fresh-eyes subagent (general-purpose).** You have been staring at the code/XML; you will see what you expect, not what's there. Prompt the subagent to inspect each rendered JPG and flag:
+
+- Brand violations: off-palette colors, non-PS fonts, title sizes outside §5, accent lines under titles, gradients/shadows.
+- Logo + subhead tag on the same slide (forbidden — see §4).
+- Missing footer on a content slide (allowed only on covers / section dividers / "Thank you" / end-cards).
+- Content crossing the L/R margin (`0.667"` either side) or colliding with the header (`y < 1.97`) or footer (`y > 6.75`) bands.
+- Overlapping elements, text overflow, cut-off text, low contrast, leftover placeholder content (`xxxx`, `lorem`, `Click to add…`).
+- Uneven gaps, columns not aligned, cramped vs. empty regions.
+
+Have the subagent list every issue found, even minor ones. Fix → re-render the affected slides → re-dispatch. **Do not declare success until at least one full fix-and-verify cycle reports no new issues.**
+
+### Dependencies
+
+- `pip install "markitdown[pptx]"` — text extraction
+- `pip install Pillow` — thumbnail grids
+- `npm install -g pptxgenjs` — used by workflow A
+- LibreOffice (`soffice`) — PDF conversion (auto-configured via `scripts/office/soffice.py`)
+- Poppler (`pdftoppm`) — PDF → JPG
 
 ## Red flags — STOP if you catch yourself thinking…
 
@@ -160,7 +243,14 @@ Always loaded:
 Load on demand (read only when the workflow step calls for it):
 - `reference/layouts.md` — composition gallery / inspiration. **Step 2.**
 - `reference/helpers.md` — helper API. **Steps 2–3.**
-- `reference/qa.md` — QA procedure. **Step 5.**
+- `reference/qa.md` — QA reference (interprets `qa.js` output). **Step 5+.**
 
 Runtime (never read as docs):
-- `theme/` — `require()` target. Contains `index.js` (tokens + helpers), `build_deck.js` (golden reference deck; `node theme/build_deck.js` regenerates `theme/output.pptx`), and `assets/` (logos + media). Treat the directory as opaque from the agent's perspective — only `index.js`'s exports matter.
+- `theme/` — `require()` target. Contains `index.js` (tokens + helpers + runtime guards), `build_deck.js` (golden reference deck; `node theme/build_deck.js` regenerates `theme/output.pptx`), `qa.js` (the QA runner — invoked via `node theme/qa.js …`, never required), and `assets/` (logos + media). Treat the directory as opaque from the agent's perspective — only `index.js`'s exports matter.
+- `scripts/` — Python helpers for editing, reading, and rendering arbitrary `.pptx` files. Invoke directly as commands (see workflows B, C, and Visual QA); never read their source as docs.
+  - `scripts/thumbnail.py` — visual grid of slides (template/deck survey).
+  - `scripts/add_slide.py` — duplicate a slide or instantiate from a layout.
+  - `scripts/clean.py` — drop orphaned slides, media, and rels after structural edits.
+  - `scripts/office/unpack.py` — extract `.pptx` to pretty-printed XML.
+  - `scripts/office/pack.py` — repack edited XML into a valid `.pptx`.
+  - `scripts/office/soffice.py` — sandbox-safe LibreOffice wrapper (used for PDF conversion in Visual QA).
