@@ -111,6 +111,93 @@ const warnings = [];
   });
 }
 
+// ─── 1f. Layout validation — re-execute the deck source in a child node    ──
+//        process with pptxgenjs monkey-patched so every `new PptxGenJS()`
+//        returns an instrumented instance. Run validateDeck, print JSON.
+const layoutFindings = [];
+{
+  const helper = `
+    const Module = require('module');
+    const path = require('path');
+    const PptxGenJS = require('pptxgenjs');
+    const T = require(${JSON.stringify(path.resolve(__dirname, "index.js"))});
+    let pres;
+    const origAdd = PptxGenJS.prototype && PptxGenJS.prototype.addSlide;
+    // Monkey-patch the constructor: every new PptxGenJS() returns an instrumented instance.
+    const origCtor = PptxGenJS;
+    function Wrapped() {
+      const inst = new origCtor();
+      pres = T.instrument(inst);
+      // Stub writeFile so deck source completes synchronously without I/O.
+      inst.writeFile = () => Promise.resolve("(stubbed)");
+      return inst;
+    }
+    Wrapped.prototype = origCtor.prototype;
+    require.cache[require.resolve('pptxgenjs')].exports = Wrapped;
+    try {
+      require(${JSON.stringify(SRC)});
+    } catch (e) {
+      console.error(JSON.stringify({ kind: 'load-error', message: e.message }));
+      process.exit(2);
+    }
+    if (!pres) { console.error(JSON.stringify({ kind: 'no-pres' })); process.exit(2); }
+    let result;
+    let payload;
+    try {
+      result = T.validateDeck(pres, { silent: true });
+      payload = { kind: 'ok', warnings: result.warnings };
+    } catch (e) {
+      const lines = String(e.message).split('\\n').map(l => l.replace(/^\\s+/, '')).filter(l => l && !/^\\[ps-pptx\\] validateDeck failed:/.test(l));
+      payload = { kind: 'errors', errors: lines, warnings: [] };
+    }
+    process.stdout.write('\\n__PS_QA_JSON__' + JSON.stringify(payload) + '\\n');
+  `;
+  try {
+    const r = spawnSync(process.execPath, ["-e", helper], {
+      cwd: path.dirname(SRC),
+      env: process.env,
+      encoding: "utf8",
+      timeout: 30000,
+    });
+    if (r.status === 0 || (r.stdout && r.stdout.trim())) {
+      const stdout = r.stdout || "";
+      const marker = stdout.split("\n").map(l => l.trim()).find(l => l.startsWith("__PS_QA_JSON__"));
+      const out = marker ? marker.slice("__PS_QA_JSON__".length) : null;
+      if (out) {
+        const parsed = JSON.parse(out);
+        if (parsed.kind === "errors") {
+          parsed.errors.forEach((line) => {
+            // Parse "slide N: collision — ..." | "slide N: ... extends past footer band ..." | "slide N: missing addFooter ..."
+            const slideMatch = /^slide\s+(\d+):\s+(.*)$/.exec(line);
+            const slideNo = slideMatch ? +slideMatch[1] : null;
+            const detail = slideMatch ? slideMatch[2] : line;
+            let kind = "other";
+            if (/collision/.test(detail)) kind = "collision";
+            else if (/footer band/.test(detail)) kind = "bounds";
+            else if (/missing addFooter/.test(detail)) kind = "footer";
+            else if (/intrudes/.test(detail)) kind = "bounds";
+            layoutFindings.push({ slide: slideNo, kind, message: detail });
+            errors.push(`${kind}: slide ${slideNo}: ${detail}`);
+          });
+        }
+        if (parsed.warnings && parsed.warnings.length) {
+          parsed.warnings.forEach((w) => {
+            const m = /^slide\s+(\d+):\s+balance\s+—\s+(.*)$/.exec(w);
+            layoutFindings.push({ slide: m ? +m[1] : null, kind: "balance", message: m ? m[2] : w, severity: "warning" });
+            warnings.push("balance: " + w);
+          });
+        }
+      } else if (r.stderr) {
+        warnings.push(`layout: validation helper produced no output (stderr: ${r.stderr.split("\n")[0]})`);
+      }
+    } else if (r.stderr) {
+      warnings.push(`layout: validation helper failed (${r.stderr.split("\n")[0]})`);
+    }
+  } catch (e) {
+    warnings.push(`layout: could not run validator (${e.message.split("\n")[0]})`);
+  }
+}
+
 // ─── 2. Render to PDF + JPGs ────────────────────────────────────────────────
 const PDF = path.join(REPORT_DIR, "deck.pdf");
 const SOFFICE_PY = path.join(process.env.HOME, ".claude/skills/pptx/scripts/office/soffice.py");
@@ -210,12 +297,36 @@ End with a count of hard failures vs minor issues. **Do not declare success on t
 
 fs.writeFileSync(promptPath, prompt);
 
+// ─── Structured findings sidecar (consumed by deck-qa subagent) ─────────────
+const findingsPath = path.join(REPORT_DIR, "findings.json");
+fs.writeFileSync(findingsPath, JSON.stringify({
+  ok: errors.length === 0,
+  errors: errors.map((e) => {
+    const m = /^([a-z-]+):\s+(?:slide\s+(\d+):\s+)?(.*)$/i.exec(e);
+    return {
+      kind: m ? m[1] : "other",
+      slide: m && m[2] ? +m[2] : null,
+      message: m ? m[3] : e,
+    };
+  }),
+  warnings: warnings.map((w) => {
+    const m = /^([a-z-]+):\s+(?:slide\s+(\d+):\s+)?(.*)$/i.exec(w);
+    return {
+      kind: m ? m[1] : "other",
+      slide: m && m[2] ? +m[2] : null,
+      message: m ? m[3] : w,
+    };
+  }),
+  layoutFindings,
+}, null, 2));
+
 // ─── Report ─────────────────────────────────────────────────────────────────
 console.log(`\nps-pptx QA report → ${REPORT_DIR}`);
 console.log(`  source : ${SRC}`);
 console.log(`  pptx   : ${PPTX}`);
 console.log(`  slides : ${slideJpgs.length} jpg(s) rendered`);
-console.log(`  prompt : ${promptPath}\n`);
+console.log(`  prompt : ${promptPath}`);
+console.log(`  json   : ${findingsPath}\n`);
 
 if (warnings.length) {
   console.log(`Warnings (${warnings.length}):`);

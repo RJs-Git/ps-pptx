@@ -1,0 +1,118 @@
+{
+  "ok": true,
+  "errors": [],
+  "warnings": [
+    {
+      "kind": "balance",
+      "slide": 2,
+      "message": "balance — content center-of-mass offset 0% horizontally, -43% vertically from content-area center"
+    },
+    {
+      "kind": "balance",
+      "slide": 16,
+      "message": "balance — content center-of-mass offset 0% horizontally, -40% vertically from content-area center"
+    },
+    {
+      "kind": "balance",
+      "slide": 17,
+      "message": "balance — content center-of-mass offset 0% horizontally, -40% vertically from content-area center"
+    },
+    {
+      "kind": "balance",
+      "slide": 18,
+      "message": "balance — content center-of-mass offset 0% horizontally, -40% vertically from content-area center"
+    },
+    {
+      "kind": "balance",
+      "slide": 19,
+      "message": "balance — content center-of-mass offset 0% horizontally, -40% vertically from content-area center"
+    },
+    {
+      "kind": "balance",
+      "slide": 29,
+      "message": "balance — content center-of-mass offset 33% horizontally, -4% vertically from content-area center"
+    },
+    {
+      "kind": "balance",
+      "slide": 30,
+      "message": "balance — content center-of-mass offset -33% horizontally, -2% vertically from content-area center"
+    },
+    {
+      "kind": "balance",
+      "slide": 32,
+      "message": "balance — content fills 85% of the content area; slide looks crowded"
+    },
+    {
+      "kind": "balance",
+      "slide": 36,
+      "message": "balance — content fills only 13% of the content area; slide looks empty"
+    },
+    {
+      "kind": "balance",
+      "slide": 36,
+      "message": "balance — content center-of-mass offset 0% horizontally, -43% vertically from content-area center"
+    }
+  ],
+  "layoutFindings": [
+    {
+      "slide": 2,
+      "kind": "balance",
+      "message": "content center-of-mass offset 0% horizontally, -43% vertically from content-area center",
+      "severity": "warning"
+    },
+    {
+      "slide": 16,
+      "kind": "balance",
+      "message": "content center-of-mass offset 0% horizontally, -40% vertically from content-area center",
+      "severity": "warning"
+    },
+    {
+      "slide": 17,
+      "kind": "balance",
+      "message": "content center-of-mass offset 0% horizontally, -40% vertically from content-area center",
+      "severity": "warning"
+    },
+    {
+      "slide": 18,
+      "kind": "balance",
+      "message": "content center-of-mass offset 0% horizontally, -40% vertically from content-area center",
+      "severity": "warning"
+    },
+    {
+      "slide": 19,
+      "kind": "balance",
+      "message": "content center-of-mass offset 0% horizontally, -40% vertically from content-area center",
+      "severity": "warning"
+    },
+    {
+      "slide": 29,
+      "kind": "balance",
+      "message": "content center-of-mass offset 33% horizontally, -4% vertically from content-area center",
+      "severity": "warning"
+    },
+    {
+      "slide": 30,
+      "kind": "balance",
+      "message": "content center-of-mass offset -33% horizontally, -2% vertically from content-area center",
+      "severity": "warning"
+    },
+    {
+      "slide": 32,
+      "kind": "balance",
+      "message": "content fills 85% of the content area; slide looks crowded",
+      "severity": "warning"
+    },
+    {
+      "slide": 36,
+      "kind": "balance",
+      "message": "content fills only 13% of the content area; slide looks empty",
+      "severity": "warning"
+    },
+    {
+      "slide": 36,
+      "kind": "balance",
+      "message": "content center-of-mass offset 0% horizontally, -43% vertically from content-area center",
+      "severity": "warning"
+    }
+  ]
+}
