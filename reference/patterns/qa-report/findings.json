@@ -1,0 +1,19 @@
+{
+  "ok": true,
+  "errors": [],
+  "warnings": [
+    {
+      "kind": "balance",
+      "slide": 1,
+      "message": "balance — content fills 85% of the content area; slide looks crowded"
+    }
+  ],
+  "layoutFindings": [
+    {
+      "slide": 1,
+      "kind": "balance",
+      "message": "content fills 85% of the content area; slide looks crowded",
+      "severity": "warning"
+    }
+  ]
+}
