@@ -113,6 +113,7 @@ Node resolves `theme/` to `theme/index.js` automatically.
 | Footer | `addFooter(slide, { color?, pageNum?, dateText? })` |
 | Custom card / shape | `addBox(slide, { x, y, w, h, shape?, fill?, line?, text?, textOpts? })` |
 | Mark non-content slide role | `markRole(slide, "cover"\|"section-divider"\|"thank-you"\|"end-card")` |
+| Layout primitives | `row`, `column`, `grid`, `stack` — see "Layout primitives" below |
 | Validate + write | `await writeDeck(pres, "out.pptx")` |
 
 **The helpers throw on brand violations at `node your_deck.js` time.** Off-palette colors, off-table title sizes, logo+subhead collisions, off-margin boxes, missing footers (for non-cover slides) — all fail the build with a specific error pointing at the line. **Do not catch or work around these errors — fix the deck.** If a helper rejects something you genuinely need, the right move is almost always to redesign the slide, not bypass the helper.
@@ -138,6 +139,56 @@ Principles when composing:
 - **Display numerals / oversized stats**: `FONT_MONO_LIGHT` for thin display, `FONT_TITLE` bold for emphatic.
 - **Image placeholders**: `GRAY_LIGHT` filled rect when no asset; full-bleed images only when intentional.
 - **Whitespace beats density.** If a layout feels crowded, it is — split, drop content, or rewrite.
+
+### Layout primitives — prefer these over hand-typed coordinates
+
+The theme exports four layout primitives. Each takes a parent rect and an `items[]` list of `{ flex?, render(rect) }` entries; the primitive computes each cell's `{ x, y, w, h }` and invokes `render(rect)`, which calls `addH1`/`addBody`/`addBox` with the resolved coordinates. **The primitive guarantees cells don't overlap and don't exceed the parent rect.**
+
+- `T.row(slide, { x, y, w, h, gap, items })` — left-to-right; cell widths from `flex` weights (default equal).
+- `T.column(slide, { x, y, w, h, gap, items })` — top-to-bottom analogue.
+- `T.grid(slide, { x, y, w, h, cols, rows, gap, items })` — fixed `cols × rows` grid; items carry `{ col, row, colSpan?, rowSpan?, render }`.
+- `T.stack(slide, { x, y, w, h, items })` — z-stacked (all items share the rect). Use sparingly for badges or banner-on-image overlays.
+
+Mandate: **for any region that contains two or more content elements, use a primitive.** Raw `addBox`/`addBody` with hand-typed coordinates is allowed only for one-off elements (a single full-width body block, a hero stat). When you do use raw coordinates, leave a one-line `// reason: ...` comment.
+
+```js
+T.row(s, {
+  x: T.MARGIN_L, y: 2.4, w: T.CONTENT_W, h: 4.0, gap: 0.3,
+  items: [
+    { render: (r) => T.addBody(s, "Left column…",  { x: r.x, y: r.y, w: r.w, h: r.h, fontSize: 11 }) },
+    { render: (r) => T.addBody(s, "Right column…", { x: r.x, y: r.y, w: r.w, h: r.h, fontSize: 11 }) },
+  ],
+});
+```
+
+### Pattern library — start here when building common slides
+
+Before composing from primitives, check `reference/patterns/` for a pre-built pattern that matches the slide's intent:
+
+- `scqa3col`     — Situation / Complication / Question three-column
+- `matrix2x2`    — 2x2 matrix with axis labels and quadrant boxes
+- `kpiTree`      — One headline KPI feeding a row of supporting KPIs
+- `beforeAfter`  — Two-column before/after comparison
+- `journeyMap`   — Horizontal step sequence with labels and notes
+- `heatmap`      — Capability heatmap (rows × cols, scored)
+
+Each pattern is a function `(slide, T, content)`. Pass your content object and the pattern produces a validated layout:
+
+```js
+const patterns = require("./reference/patterns");
+patterns.scqa3col(s, T, {
+  subhead: "Situation analysis",
+  title: "Why we must act now",
+  columns: [
+    { label: "SITUATION",    body: "..." },
+    { label: "COMPLICATION", body: "..." },
+    { label: "QUESTION",     body: "..." },
+  ],
+  pageNum: 4,
+});
+```
+
+If no pattern fits, compose with primitives. Compose from raw coordinates only as a last resort.
 
 For inspiration and worked examples (43 reference compositions used in the canonical PS deck), see `reference/layouts.md`. **Treat that file as a gallery to remix, not a menu to pick from.** If a reference composition is a perfect fit, copy it. Otherwise, take what's useful (column proportions, type hierarchy, callout shape) and compose.
 
