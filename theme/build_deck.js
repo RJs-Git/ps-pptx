@@ -26,17 +26,22 @@ const {
   FOOTER_X, FOOTER_Y, FOOTER_W, FOOTER_H,
   PAGE_X, PAGE_Y, PAGE_W, PAGE_H,
   LOGO_WHITE, LOGO_COLOR, LOGO_BLACK, MEDIA,
-  addLogo, addFooter, addSubheadTag, addH1, addBody,
+  addLogo, addFooter, addSubheadTag, addH1, addBody, addBox,
+  row, column, grid,
+  markRole, instrument, writeDeck,
 } = T;
 
+const patterns = require(path.join(__dirname, "..", "reference", "patterns"));
+
 // ─── Build ───────────────────────────────────────────────────────────────────
-const pres = new PptxGenJS();
+const pres = instrument(new PptxGenJS());
 pres.layout = "LAYOUT_WIDE";
 pres.title  = "Presentation template";
 
 // Slide 1 — Cover (red)
 {
   const s = pres.addSlide();
+  markRole(s, "cover");
   s.background = { color: RED };
   s.addImage({ path: LOGO_WHITE, x: LOGO_X, y: LOGO_Y, w: 0.78, h: 0.424 });
   s.addText("Presentation template", {
@@ -69,6 +74,7 @@ pres.title  = "Presentation template";
 // Slide 3 — Sample Slides section divider (white bg, centered red title)
 {
   const s = pres.addSlide();
+  markRole(s, "section-divider");
   s.addText("Sample Slides", {
     x: 0, y: 0, w: W, h: H,
     fontFace: FONT_TITLE, fontSize: 72, color: RED, bold: true,
@@ -80,6 +86,7 @@ pres.title  = "Presentation template";
 // Slide 4 — Cover 2 lines
 {
   const s = pres.addSlide();
+  markRole(s, "cover");
   s.background = { color: RED };
   addLogo(s, WHITE);
   addH1(s, "Presentation\ntitle in two lines", { x: 0.667, y: 2.602, w: 8.27, h: 2.295, fontSize: 66, color: WHITE });
@@ -89,6 +96,7 @@ pres.title  = "Presentation template";
 // Slide 5 — Cover 3 lines
 {
   const s = pres.addSlide();
+  markRole(s, "cover");
   s.background = { color: RED };
   addLogo(s, WHITE);
   s.addText("Presentation title\nin three lines lorem\nipsum dolor", {
@@ -144,6 +152,7 @@ pres.title  = "Presentation template";
 // Section title slides — red w/ "Section title" + index
 function sectionTitle(num, pageNum) {
   const s = pres.addSlide();
+  markRole(s, "section-divider");
   s.background = { color: RED };
   addH1(s, "Section title", { x: 0.667, y: 0.5, w: 11.0, h: 1.6, fontSize: 96, color: WHITE });
   s.addText(num, { x: 10.5, y: 5.0, w: 2.166, h: 1.875, fontFace: FONT_MONO_LIGHT, fontSize: 130, color: WHITE, align: "right", margin: 0, valign: "bottom", charSpacing: -0.5 });
@@ -285,28 +294,9 @@ sectionTitle("03", 12);
 // Slide 19 — Headline only
 {
   const s = pres.addSlide();
-  s.addText("Subhead", {
-    x: LOGO_X, y: 0.483, w: 6, h: 0.184, fontFace: FONT_MONO, fontSize: 10,
-    color: RED, bold: true, charSpacing: -0.5, margin: 0, valign: "bottom",
-  });
+  addSubheadTag(s, "Subhead");
   addH1(s, "Headline only");
-  s.addText(
-    [
-      { text: "© Publicis Sapient", options: {} },
-      { text: "\t\t", options: {} },
-      { text: "XX.2026", options: {} },
-    ],
-    {
-      x: FOOTER_X, y: FOOTER_Y, w: FOOTER_W, h: FOOTER_H,
-      fontFace: FONT_MONO, fontSize: 8, color: RED, bold: true,
-      charSpacing: -0.5, margin: 0, valign: "middle",
-    }
-  );
-  s.addText("19", {
-    x: PAGE_X, y: PAGE_Y, w: PAGE_W, h: PAGE_H,
-    fontFace: FONT_MONO, fontSize: 8, color: RED, bold: true,
-    align: "right", charSpacing: -0.5, margin: 0, valign: "middle",
-  });
+  addFooter(s, { pageNum: 19 });
 }
 
 // Slides 20-24 — Headline over image (full bleed)
@@ -404,10 +394,11 @@ halfImageSlides.forEach(it => {
 {
   const s = pres.addSlide();
   addSubheadTag(s, "Subhead");
-  addH1(s, "Headline or title", { fontSize: 26 });
+  // H1 narrowed to the left half so the right-half body doesn't collide.
+  addH1(s, "Headline or title", { x: MARGIN_L, y: 0.758, w: 4.85, h: 1.6, fontSize: 26 });
   addBody(s, "One column text slide lorem dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in.",
     { x: 5.68, y: 0.85, w: 6.65, h: 1.5, fontSize: 11 });
-  s.addShape("rect", { x: 0.667, y: 2.8, w: 11.95, h: 3.65, fill: { color: GRAY_LIGHT }, line: { type: "none" } });
+  addBox(s, { x: 0.667, y: 2.8, w: 11.95, h: 3.65, shape: "rect", fill: { color: GRAY_LIGHT }, name: "image-placeholder" });
   addFooter(s, { pageNum: 32 });
 }
 
@@ -530,6 +521,7 @@ calloutGrid(39, "red-cards");
 // Slide 40 — Thank you
 {
   const s = pres.addSlide();
+  markRole(s, "thank-you");
   s.background = { color: RED };
   s.addImage({ path: LOGO_WHITE, x: LOGO_X, y: LOGO_Y, w: 0.82, h: 0.446 });
   addH1(s, "Thank you", { x: 0.667, y: 3.3, w: 11, h: 1.4, fontSize: 56, color: WHITE });
@@ -543,6 +535,7 @@ const LOGO_END_H = LOGO_END_W * (LOGO_H / LOGO_W); // preserve master aspect rat
 // Slide 41 — red bg with white wordmark
 {
   const s = pres.addSlide();
+  markRole(s, "end-card");
   s.background = { color: RED };
   s.addImage({ path: LOGO_WHITE, x: (W - LOGO_END_W) / 2, y: (H - LOGO_END_H) / 2, w: LOGO_END_W, h: LOGO_END_H });
 }
@@ -550,17 +543,19 @@ const LOGO_END_H = LOGO_END_W * (LOGO_H / LOGO_W); // preserve master aspect rat
 // Slide 42 — white bg, color wordmark
 {
   const s = pres.addSlide();
+  markRole(s, "end-card");
   s.addImage({ path: LOGO_COLOR, x: (W - LOGO_END_W) / 2, y: (H - LOGO_END_H) / 2, w: LOGO_END_W, h: LOGO_END_H });
 }
 
 // Slide 43 — black bg, white wordmark
 {
   const s = pres.addSlide();
+  markRole(s, "end-card");
   s.background = { color: BLACK };
   s.addImage({ path: LOGO_WHITE, x: (W - LOGO_END_W) / 2, y: (H - LOGO_END_H) / 2, w: LOGO_END_W, h: LOGO_END_H });
 }
 
-// Save
-pres.writeFile({ fileName: path.join(__dirname, "output.pptx") }).then((fn) => {
+// Save (validateDeck runs first; throws on collision/bounds/footer issues)
+writeDeck(pres, path.join(__dirname, "output.pptx")).then((fn) => {
   console.log("Wrote " + fn);
 });
