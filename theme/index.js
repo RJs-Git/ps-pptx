@@ -13,6 +13,7 @@
  */
 
 const path = require("path");
+const layout = require("./layout.js");
 
 // ─── Brand tokens — the ONLY colors permitted in PS decks ────────────────────
 const RED        = "E90130";
@@ -135,6 +136,7 @@ function addLogo(slide, variant = "white") {
   }
   m.logo = true;
   slide.addImage({ path: file, x: LOGO_X, y: LOGO_Y, w: LOGO_W, h: LOGO_H });
+  layout.recordPlacement(slide, "logo", "addLogo", LOGO_X, LOGO_Y, LOGO_W, LOGO_H, { reserved: "logo" });
 }
 
 function addFooter(slide, opts = {}) {
@@ -158,11 +160,13 @@ function addFooter(slide, opts = {}) {
       fontFace: FONT_MONO, fontSize: 8, color, charSpacing: -0.5, margin: 0, valign: "middle"
     }
   );
+  layout.recordPlacement(slide, "footer", "addFooter", FOOTER_X, FOOTER_Y, FOOTER_W, FOOTER_H, { reserved: "footer", overFooter: true });
   if (pageNum != null) {
     slide.addText(String(pageNum), {
       x: PAGE_X, y: PAGE_Y, w: PAGE_W, h: PAGE_H,
       fontFace: FONT_MONO, fontSize: 8, color, align: "right", charSpacing: -0.5, margin: 0, valign: "middle"
     });
+    layout.recordPlacement(slide, "page-num", "addFooter.pageNum", PAGE_X, PAGE_Y, PAGE_W, PAGE_H, { reserved: "page-num", overFooter: true });
   }
 }
 
@@ -177,6 +181,9 @@ function addSubheadTag(slide, text, color = RED) {
     x: LOGO_X, y: 0.483, w: 6, h: 0.184, fontFace: FONT_MONO, fontSize: 10,
     color, charSpacing: -0.5, margin: 0, valign: "bottom",
   });
+  // Subhead tag occupies the same slot as the logo (mutually exclusive),
+  // so mark it reserved=logo to avoid spurious collisions with title content.
+  layout.recordPlacement(slide, "subhead-tag", "addSubheadTag", LOGO_X, 0.483, 6, 0.184, { reserved: "logo" });
 }
 
 function addH1(slide, text, opts = {}) {
@@ -194,11 +201,12 @@ function addH1(slide, text, opts = {}) {
       `If the headline doesn't fit one of these roles, rewrite the headline — don't invent a size.`
     );
   }
+  const h1x = opts.x != null ? opts.x : MARGIN_L;
+  const h1y = opts.y != null ? opts.y : 0.758;
+  const h1w = opts.w != null ? opts.w : CONTENT_W;
+  const h1h = opts.h != null ? opts.h : 1.21;
   slide.addText(text, {
-    x: opts.x != null ? opts.x : MARGIN_L,
-    y: opts.y != null ? opts.y : 0.758,
-    w: opts.w != null ? opts.w : CONTENT_W,
-    h: opts.h != null ? opts.h : 1.21,
+    x: h1x, y: h1y, w: h1w, h: h1h,
     fontFace: FONT_TITLE,
     fontSize,
     color,
@@ -209,6 +217,7 @@ function addH1(slide, text, opts = {}) {
     lineSpacingMultiple: 1.05,
     charSpacing: -0.5,
   });
+  layout.recordPlacement(slide, "h1", "addH1", h1x, h1y, h1w, h1h, { allowOverlap: !!opts.allowOverlap });
 }
 
 function addBody(slide, text, opts = {}) {
@@ -223,6 +232,7 @@ function addBody(slide, text, opts = {}) {
   const w = opts.w != null ? opts.w : CONTENT_W;
   const h = opts.h != null ? opts.h : 3.2;
   if (!opts.skipBoundsCheck) checkBounds("addBody", x, y, w, h, opts);
+  layout.recordPlacement(slide, "body", opts.name || "addBody", x, y, w, h, { allowOverlap: !!opts.allowOverlap, overFooter: !!opts.overFooter, fullBleed: !!opts.fullBleed });
   slide.addText(text, {
     x, y, w, h,
     fontFace: opts.fontFace || FONT_BODY,
@@ -250,6 +260,7 @@ function addBox(slide, opts) {
     throw new Error(`[ps-pptx] addBox: requires { x, y, w, h }.`);
   }
   checkBounds("addBox", opts.x, opts.y, opts.w, opts.h, opts);
+  layout.recordPlacement(slide, "box", opts.name || "addBox", opts.x, opts.y, opts.w, opts.h, { allowOverlap: !!opts.allowOverlap, overFooter: !!opts.overFooter, fullBleed: !!opts.fullBleed });
   if (opts.fill) checkColor("addBox.fill", opts.fill.color || opts.fill);
   if (opts.line) checkColor("addBox.line", opts.line.color || opts.line);
   if (opts.shape) {
@@ -299,7 +310,7 @@ function instrument(pres) {
  * Validate every registered slide. Throws on any failure with a list of
  * offending slide indices. Call before pres.writeFile, or use writeDeck.
  */
-function validateDeck(pres) {
+function validateDeck(pres, opts = {}) {
   const slides = pres[PRES_REGISTRY] || [];
   const errors = [];
   slides.forEach((s, i) => {
@@ -311,9 +322,25 @@ function validateDeck(pres) {
       errors.push(`slide ${idx}: missing addFooter (mark covers/closers via markRole(slide, "cover"|"thank-you"|"end-card") if intentional)`);
     }
   });
+
+  const geom = {
+    W, H, MARGIN_L, MARGIN_R,
+    TITLE_BAND_TOP, TITLE_BAND_BOTTOM, FOOTER_BAND_TOP,
+    LOGO_X, LOGO_Y, LOGO_W, LOGO_H,
+    FOOTER_X, FOOTER_Y, FOOTER_W, FOOTER_H,
+    PAGE_X, PAGE_Y, PAGE_W, PAGE_H,
+  };
+  const layoutResult = layout.validateLayout(pres, slides, geom);
+  errors.push(...layoutResult.errors);
+
+  if (layoutResult.warnings.length && !opts.silent) {
+    layoutResult.warnings.forEach((w) => console.warn(`[ps-pptx] warn: ${w}`));
+  }
+
   if (errors.length) {
     throw new Error(`[ps-pptx] validateDeck failed:\n  ${errors.join("\n  ")}`);
   }
+  return { warnings: layoutResult.warnings };
 }
 
 /**
@@ -338,6 +365,11 @@ module.exports = {
   LOGO_WHITE, LOGO_COLOR, LOGO_BLACK, MEDIA,
   // helpers
   addLogo, addFooter, addSubheadTag, addH1, addBody, addBox,
+  // layout primitives
+  row: layout.row,
+  column: layout.column,
+  grid: layout.grid,
+  stack: layout.stack,
   // deck-level
   markRole, instrument, validateDeck, writeDeck,
 };
