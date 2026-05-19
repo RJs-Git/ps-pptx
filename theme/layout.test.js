@@ -10,6 +10,7 @@
  */
 
 const layout = require("./layout.js");
+const T = require("./index.js");
 
 let passed = 0;
 let failed = 0;
@@ -251,6 +252,106 @@ t("primitives populate placement registry on slide", () => {
   // The two cells should not collide
   const v = layout.validateLayout({}, [slide], GEOM);
   eq(v.errors.length, 0, "primitive cells should not collide: " + v.errors.join(" | "));
+});
+
+// ─── _measureTitleFit ─────────────────────────────────────────────────────────
+t("measureTitleFit: short title fits at default 38pt × 1.21in box", () => {
+  const r = T._measureTitleFit("Why we must act now", 38, 12.0, 1.21);
+  assert(r.fits === true, "short title should fit: " + JSON.stringify(r));
+  eq(r.lines, 1);
+});
+
+t("measureTitleFit: long sentence-headline overflows at 38pt × 1.21in box", () => {
+  // The exact slide-2 title from issue #11 evidence
+  const text = "Winners industrialize a few reengineered journeys on a governed, model-agnostic foundation — before the EU AI Act forces laggards to retrofit.";
+  const r = T._measureTitleFit(text, 38, 12.0, 1.21);
+  assert(r.fits === false, "long title should overflow at 38pt: " + JSON.stringify(r));
+  assert(r.lines >= 3, "expected >=3 wrapped lines, got " + r.lines);
+  assert(r.overflowIn > 0, "overflowIn should be positive");
+});
+
+t("measureTitleFit: cover-2line geometry at 66pt with two-line title fits", () => {
+  // Cover slides use 66pt for 2-line headlines and a taller box (~2.4in).
+  const r = T._measureTitleFit("A short two-line cover headline goes here", 66, 12.0, 2.4);
+  assert(r.fits === true, "cover-2line should fit: " + JSON.stringify(r));
+});
+
+t("measureTitleFit: lineHeight matches addH1's lineSpacingMultiple of 1.05", () => {
+  const r = T._measureTitleFit("Hi", 38, 12.0, 1.21);
+  near(r.lineHeightIn, 38 * 1.05 / 72, 1e-9);
+});
+
+t("measureTitleFit: 5% slack on box height absorbs glyph-measure noise", () => {
+  // Construct a title whose totalHeight lands within 5% of boxH — should still fit.
+  // 1 line at 38pt = 0.554in. Box = 0.55in (just under). 0.554 / 0.55 = 1.0073,
+  // within the 1.05 slack → fits.
+  const r = T._measureTitleFit("Short", 38, 12.0, 0.55);
+  assert(r.fits === true, "within slack should fit: " + JSON.stringify(r));
+});
+
+// ─── _titleFitSuggestions ─────────────────────────────────────────────────────
+t("titleFitSuggestions: returns rewrite-shorter, step-down-size, dense-size", () => {
+  const text = "Winners industrialize a few reengineered journeys on a governed, model-agnostic foundation — before the EU AI Act forces laggards to retrofit.";
+  const out = T._titleFitSuggestions(text, 38, 12.0, 1.21);
+  assert(Array.isArray(out), "should return an array");
+  assert(out.length >= 2 && out.length <= 3, "expected 2-3 suggestions, got " + out.length);
+  const kinds = out.map((s) => s.kind);
+  assert(kinds.includes("rewrite-shorter"), "missing rewrite-shorter: " + kinds.join(","));
+  assert(kinds.includes("step-down-size"), "missing step-down-size: " + kinds.join(","));
+});
+
+t("titleFitSuggestions: rewrite-shorter reports maxChars budget at current size+box", () => {
+  const out = T._titleFitSuggestions("xxx", 38, 12.0, 1.21);
+  const rewrite = out.find((s) => s.kind === "rewrite-shorter");
+  assert(rewrite && typeof rewrite.maxChars === "number" && rewrite.maxChars > 0, "rewrite suggestion missing maxChars: " + JSON.stringify(rewrite));
+  // At 38pt × 12in box × 1.21in tall, ~2 lines fit; budget should be ~2 × maxCharsPerLine
+  assert(rewrite.maxChars < 200, "maxChars sanity (got " + rewrite.maxChars + ")");
+});
+
+t("titleFitSuggestions: step-down-size picks the next-smaller whitelist size that fits", () => {
+  const text = "Winners industrialize a few reengineered journeys on a governed, model-agnostic foundation — before the EU AI Act forces laggards to retrofit.";
+  const out = T._titleFitSuggestions(text, 38, 12.0, 1.21);
+  const stepDown = out.find((s) => s.kind === "step-down-size");
+  assert(stepDown, "missing step-down-size");
+  assert([26, 32, 36].includes(stepDown.fontSize), "step-down should be smaller content size, got " + stepDown.fontSize);
+  assert(typeof stepDown.h === "number" && stepDown.h > 1.21, "step-down should widen h to fit, got " + stepDown.h);
+});
+
+// ─── addH1 throws on title overflow ───────────────────────────────────────────
+t("addH1: throws with structured options when title overflows the box", () => {
+  // pptxgenjs is required only for the slide-shaped object here; we mock the
+  // bare minimum so addH1 reaches the measurement check.
+  const slide = { addText: () => {}, addImage: () => {}, addShape: () => {} };
+  const text = "Winners industrialize a few reengineered journeys on a governed, model-agnostic foundation — before the EU AI Act forces laggards to retrofit.";
+  expectThrow(() => T.addH1(slide, text, { fontSize: 38 }), /title.*does not fit/i);
+});
+
+t("addH1: throw message includes rewrite-shorter and step-down-size suggestions", () => {
+  const slide = { addText: () => {}, addImage: () => {}, addShape: () => {} };
+  const text = "Winners industrialize a few reengineered journeys on a governed, model-agnostic foundation — before the EU AI Act forces laggards to retrofit.";
+  let caught;
+  try { T.addH1(slide, text, { fontSize: 38 }); } catch (e) { caught = e; }
+  assert(caught, "expected throw");
+  assert(/rewrite-shorter/i.test(caught.message), "missing rewrite-shorter in message: " + caught.message);
+  assert(/step-down-size/i.test(caught.message), "missing step-down-size in message: " + caught.message);
+});
+
+t("addH1: short title at 38pt × default box does not throw", () => {
+  const slide = { addText: () => {}, addImage: () => {}, addShape: () => {} };
+  // No throw expected
+  T.addH1(slide, "Why we must act now", { fontSize: 38 });
+});
+
+t("qa.js synthetic regex: parses addH1 throw message", () => {
+  const slide = { addText: () => {}, addImage: () => {}, addShape: () => {} };
+  const text = "Winners industrialize a few reengineered journeys on a governed, model-agnostic foundation — before the EU AI Act forces laggards to retrofit.";
+  let msg = "";
+  try { T.addH1(slide, text, { fontSize: 38 }); } catch (e) { msg = e.message; }
+  const re = /\[ps-pptx\] addH1: title does not fit .* fontSize=(\d+)pt\. Measured (\d+) line\(s\) × ([\d.]+)in = ([\d.]+)in vs box h=([\d.]+)in \(overflow ([\d.]+)in\)/;
+  const m = re.exec(msg);
+  assert(m, "regex should match addH1 throw message: " + msg);
+  eq(+m[1], 38);
+  assert(+m[2] >= 3, "expected 3+ lines");
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

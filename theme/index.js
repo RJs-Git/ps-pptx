@@ -62,6 +62,117 @@ const MEDIA = (n) => path.join(__dirname, "assets", "media", n);
 // ─── Title-size whitelist (§5 of SKILL.md) ────────────────────────────────────
 const TITLE_SIZES = new Set([26, 32, 36, 38, 54, 56, 66, 72, 96]);
 
+// ─── Title-fit measurement ───────────────────────────────────────────────────
+// Approximate average glyph width for Lexend Deca SemiBold, expressed in em.
+// Mixed-case English text averages near 0.55em; we absorb residual error via
+// a 5% slack on the totalHeight ≤ boxH check.
+const LEXEND_AVG_CHAR_WIDTH_EM = 0.55;
+
+function _wrapLines(text, fontSize, boxW) {
+  const charW = (fontSize / 72) * LEXEND_AVG_CHAR_WIDTH_EM; // inches per char
+  const maxCharsPerLine = Math.max(1, Math.floor(boxW / charW));
+  const words = String(text).split(/\s+/).filter(Boolean);
+  if (words.length === 0) return { lines: 0, maxCharsPerLine };
+  let lines = 1;
+  let lineLen = 0;
+  for (const w of words) {
+    const wLen = w.length;
+    if (lineLen === 0) {
+      lineLen = wLen;
+      if (wLen > maxCharsPerLine) {
+        // unbreakable word: count as its own line
+        lines += 1;
+        lineLen = 0;
+      }
+    } else if (lineLen + 1 + wLen <= maxCharsPerLine) {
+      lineLen += 1 + wLen;
+    } else {
+      lines += 1;
+      lineLen = wLen > maxCharsPerLine ? 0 : wLen;
+      if (wLen > maxCharsPerLine) lines += 1;
+    }
+  }
+  return { lines, maxCharsPerLine };
+}
+
+/**
+ * Measure whether `text` at `fontSize` fits inside a box of `boxW` × `boxH`
+ * (inches). Returns:
+ *   { lines, lineHeightIn, totalHeightIn, fits, overflowIn, maxCharsPerLine }
+ *
+ * `fits` allows 5% slack on boxH to absorb glyph-width approximation noise.
+ */
+function _measureTitleFit(text, fontSize, boxW, boxH) {
+  const { lines, maxCharsPerLine } = _wrapLines(text, fontSize, boxW);
+  const lineHeightIn = (fontSize * 1.05) / 72;
+  const totalHeightIn = lines * lineHeightIn;
+  const slackedBoxH = boxH * 1.05;
+  const fits = totalHeightIn <= slackedBoxH;
+  const overflowIn = fits ? 0 : totalHeightIn - boxH;
+  return { lines, lineHeightIn, totalHeightIn, fits, overflowIn, maxCharsPerLine };
+}
+
+/**
+ * Suggest 2-3 named alternatives when a title doesn't fit. Three levers:
+ *   - rewrite-shorter: keep size+box, report char budget for the current box
+ *   - step-down-size:  next-smaller whitelist size + min `h` that fits text
+ *   - dense-size:      smallest dense size (26pt) at the current box
+ *
+ * Returned shape: [{ kind, fontSize?, h?, maxChars?, note }]
+ */
+function _titleFitSuggestions(text, currentFontSize, boxW, boxH) {
+  const out = [];
+
+  // 1) rewrite-shorter: how many chars fit in the current box × current size?
+  const cur = _measureTitleFit("x", currentFontSize, boxW, boxH);
+  const lineCapacity = Math.max(1, Math.floor((boxH * 1.05) / cur.lineHeightIn));
+  const maxChars = lineCapacity * cur.maxCharsPerLine;
+  out.push({
+    kind: "rewrite-shorter",
+    fontSize: currentFontSize,
+    maxChars,
+    note: `Rewrite to ≤ ${maxChars} chars at ${currentFontSize}pt to fit ${lineCapacity} line(s) in the current box.`,
+  });
+
+  // 2) step-down-size: pick next-smaller content-tier size (26/32/36/38 only —
+  //    cover sizes 54+ are role-bound and not appropriate as a step-down).
+  const contentTier = [38, 36, 32, 26];
+  const idx = contentTier.indexOf(currentFontSize);
+  let smaller = null;
+  if (idx >= 0 && idx < contentTier.length - 1) {
+    smaller = contentTier[idx + 1];
+  } else if (idx < 0) {
+    // Caller is at a non-content size (cover etc.); offer the largest content size.
+    smaller = contentTier[0];
+  }
+  if (smaller != null) {
+    const m = _measureTitleFit(text, smaller, boxW, 1000); // unbounded h to count lines
+    const minH = +(m.totalHeightIn).toFixed(2);
+    out.push({
+      kind: "step-down-size",
+      fontSize: smaller,
+      h: minH,
+      note: `Drop to ${smaller}pt and widen the H1 box to h≈${minH}in to fit the current title.`,
+    });
+  }
+
+  // 3) dense-size: smallest dense size at current box. Skip if step-down already
+  //    chose 26pt (avoid duplicate).
+  if (smaller !== 26) {
+    const denseFits = _measureTitleFit(text, 26, boxW, boxH);
+    out.push({
+      kind: "dense-size",
+      fontSize: 26,
+      h: boxH,
+      note: denseFits.fits
+        ? `Use 26pt at the current box (${boxH}in) — fits as-is.`
+        : `Even 26pt overflows the current box; rewrite or split the title.`,
+    });
+  }
+
+  return out;
+}
+
 // ─── Per-slide tracking via symbols ──────────────────────────────────────────
 const SLIDE_META = Symbol.for("ps-pptx.slide-meta");
 const PRES_REGISTRY = Symbol.for("ps-pptx.pres-registry");
@@ -201,10 +312,23 @@ function addH1(slide, text, opts = {}) {
       `If the headline doesn't fit one of these roles, rewrite the headline — don't invent a size.`
     );
   }
+  const _h1w = opts.w != null ? opts.w : CONTENT_W;
+  const _h1h = opts.h != null ? opts.h : 1.21;
+  const _fit = _measureTitleFit(text, fontSize, _h1w, _h1h);
+  if (!_fit.fits) {
+    const suggestions = _titleFitSuggestions(text, fontSize, _h1w, _h1h);
+    const lines = suggestions.map((s) => `  - ${s.kind}: ${s.note}`).join("\n");
+    throw new Error(
+      `[ps-pptx] addH1: title does not fit the H1 box at fontSize=${fontSize}pt. ` +
+      `Measured ${_fit.lines} line(s) × ${_fit.lineHeightIn.toFixed(2)}in = ` +
+      `${_fit.totalHeightIn.toFixed(2)}in vs box h=${_h1h}in (overflow ${_fit.overflowIn.toFixed(2)}in). ` +
+      `Pick one:\n${lines}`
+    );
+  }
   const h1x = opts.x != null ? opts.x : MARGIN_L;
   const h1y = opts.y != null ? opts.y : 0.758;
-  const h1w = opts.w != null ? opts.w : CONTENT_W;
-  const h1h = opts.h != null ? opts.h : 1.21;
+  const h1w = _h1w;
+  const h1h = _h1h;
   slide.addText(text, {
     x: h1x, y: h1y, w: h1w, h: h1h,
     fontFace: FONT_TITLE,
@@ -217,7 +341,7 @@ function addH1(slide, text, opts = {}) {
     lineSpacingMultiple: 1.05,
     charSpacing: -0.5,
   });
-  layout.recordPlacement(slide, "h1", "addH1", h1x, h1y, h1w, h1h, { allowOverlap: !!opts.allowOverlap });
+  layout.recordPlacement(slide, "h1", "addH1", h1x, h1y, h1w, h1h, { allowOverlap: !!opts.allowOverlap, fontSize, text });
 }
 
 function addBody(slide, text, opts = {}) {
@@ -365,6 +489,8 @@ module.exports = {
   LOGO_WHITE, LOGO_COLOR, LOGO_BLACK, MEDIA,
   // helpers
   addLogo, addFooter, addSubheadTag, addH1, addBody, addBox,
+  // measurement (exported for qa.js + tests)
+  _measureTitleFit, _titleFitSuggestions,
   // layout primitives
   row: layout.row,
   column: layout.column,
