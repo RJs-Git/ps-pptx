@@ -312,10 +312,23 @@ function addH1(slide, text, opts = {}) {
       `If the headline doesn't fit one of these roles, rewrite the headline — don't invent a size.`
     );
   }
+  const _h1w = opts.w != null ? opts.w : CONTENT_W;
+  const _h1h = opts.h != null ? opts.h : 1.21;
+  const _fit = _measureTitleFit(text, fontSize, _h1w, _h1h);
+  if (!_fit.fits) {
+    const suggestions = _titleFitSuggestions(text, fontSize, _h1w, _h1h);
+    const lines = suggestions.map((s) => `  - ${s.kind}: ${s.note}`).join("\n");
+    throw new Error(
+      `[ps-pptx] addH1: title does not fit the H1 box at fontSize=${fontSize}pt. ` +
+      `Measured ${_fit.lines} line(s) × ${_fit.lineHeightIn.toFixed(2)}in = ` +
+      `${_fit.totalHeightIn.toFixed(2)}in vs box h=${_h1h}in (overflow ${_fit.overflowIn.toFixed(2)}in). ` +
+      `Pick one:\n${lines}`
+    );
+  }
   const h1x = opts.x != null ? opts.x : MARGIN_L;
   const h1y = opts.y != null ? opts.y : 0.758;
-  const h1w = opts.w != null ? opts.w : CONTENT_W;
-  const h1h = opts.h != null ? opts.h : 1.21;
+  const h1w = _h1w;
+  const h1h = _h1h;
   slide.addText(text, {
     x: h1x, y: h1y, w: h1w, h: h1h,
     fontFace: FONT_TITLE,

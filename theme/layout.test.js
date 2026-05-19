@@ -317,6 +317,31 @@ t("titleFitSuggestions: step-down-size picks the next-smaller whitelist size tha
   assert(typeof stepDown.h === "number" && stepDown.h > 1.21, "step-down should widen h to fit, got " + stepDown.h);
 });
 
+// ─── addH1 throws on title overflow ───────────────────────────────────────────
+t("addH1: throws with structured options when title overflows the box", () => {
+  // pptxgenjs is required only for the slide-shaped object here; we mock the
+  // bare minimum so addH1 reaches the measurement check.
+  const slide = { addText: () => {}, addImage: () => {}, addShape: () => {} };
+  const text = "Winners industrialize a few reengineered journeys on a governed, model-agnostic foundation — before the EU AI Act forces laggards to retrofit.";
+  expectThrow(() => T.addH1(slide, text, { fontSize: 38 }), /title.*does not fit/i);
+});
+
+t("addH1: throw message includes rewrite-shorter and step-down-size suggestions", () => {
+  const slide = { addText: () => {}, addImage: () => {}, addShape: () => {} };
+  const text = "Winners industrialize a few reengineered journeys on a governed, model-agnostic foundation — before the EU AI Act forces laggards to retrofit.";
+  let caught;
+  try { T.addH1(slide, text, { fontSize: 38 }); } catch (e) { caught = e; }
+  assert(caught, "expected throw");
+  assert(/rewrite-shorter/i.test(caught.message), "missing rewrite-shorter in message: " + caught.message);
+  assert(/step-down-size/i.test(caught.message), "missing step-down-size in message: " + caught.message);
+});
+
+t("addH1: short title at 38pt × default box does not throw", () => {
+  const slide = { addText: () => {}, addImage: () => {}, addShape: () => {} };
+  // No throw expected
+  T.addH1(slide, "Why we must act now", { fontSize: 38 });
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) {
   console.log("\nFailures:");
