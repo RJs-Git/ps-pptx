@@ -62,6 +62,56 @@ const MEDIA = (n) => path.join(__dirname, "assets", "media", n);
 // ─── Title-size whitelist (§5 of SKILL.md) ────────────────────────────────────
 const TITLE_SIZES = new Set([26, 32, 36, 38, 54, 56, 66, 72, 96]);
 
+// ─── Title-fit measurement ───────────────────────────────────────────────────
+// Approximate average glyph width for Lexend Deca SemiBold, expressed in em.
+// Mixed-case English text averages near 0.55em; we absorb residual error via
+// a 5% slack on the totalHeight ≤ boxH check.
+const LEXEND_AVG_CHAR_WIDTH_EM = 0.55;
+
+function _wrapLines(text, fontSize, boxW) {
+  const charW = (fontSize / 72) * LEXEND_AVG_CHAR_WIDTH_EM; // inches per char
+  const maxCharsPerLine = Math.max(1, Math.floor(boxW / charW));
+  const words = String(text).split(/\s+/).filter(Boolean);
+  if (words.length === 0) return { lines: 0, maxCharsPerLine };
+  let lines = 1;
+  let lineLen = 0;
+  for (const w of words) {
+    const wLen = w.length;
+    if (lineLen === 0) {
+      lineLen = wLen;
+      if (wLen > maxCharsPerLine) {
+        // unbreakable word: count as its own line
+        lines += 1;
+        lineLen = 0;
+      }
+    } else if (lineLen + 1 + wLen <= maxCharsPerLine) {
+      lineLen += 1 + wLen;
+    } else {
+      lines += 1;
+      lineLen = wLen > maxCharsPerLine ? 0 : wLen;
+      if (wLen > maxCharsPerLine) lines += 1;
+    }
+  }
+  return { lines, maxCharsPerLine };
+}
+
+/**
+ * Measure whether `text` at `fontSize` fits inside a box of `boxW` × `boxH`
+ * (inches). Returns:
+ *   { lines, lineHeightIn, totalHeightIn, fits, overflowIn, maxCharsPerLine }
+ *
+ * `fits` allows 5% slack on boxH to absorb glyph-width approximation noise.
+ */
+function _measureTitleFit(text, fontSize, boxW, boxH) {
+  const { lines, maxCharsPerLine } = _wrapLines(text, fontSize, boxW);
+  const lineHeightIn = (fontSize * 1.05) / 72;
+  const totalHeightIn = lines * lineHeightIn;
+  const slackedBoxH = boxH * 1.05;
+  const fits = totalHeightIn <= slackedBoxH;
+  const overflowIn = fits ? 0 : totalHeightIn - boxH;
+  return { lines, lineHeightIn, totalHeightIn, fits, overflowIn, maxCharsPerLine };
+}
+
 // ─── Per-slide tracking via symbols ──────────────────────────────────────────
 const SLIDE_META = Symbol.for("ps-pptx.slide-meta");
 const PRES_REGISTRY = Symbol.for("ps-pptx.pres-registry");
@@ -365,6 +415,8 @@ module.exports = {
   LOGO_WHITE, LOGO_COLOR, LOGO_BLACK, MEDIA,
   // helpers
   addLogo, addFooter, addSubheadTag, addH1, addBody, addBox,
+  // measurement (exported for qa.js + tests)
+  _measureTitleFit,
   // layout primitives
   row: layout.row,
   column: layout.column,
