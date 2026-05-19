@@ -289,6 +289,34 @@ t("measureTitleFit: 5% slack on box height absorbs glyph-measure noise", () => {
   assert(r.fits === true, "within slack should fit: " + JSON.stringify(r));
 });
 
+// ─── _titleFitSuggestions ─────────────────────────────────────────────────────
+t("titleFitSuggestions: returns rewrite-shorter, step-down-size, dense-size", () => {
+  const text = "Winners industrialize a few reengineered journeys on a governed, model-agnostic foundation — before the EU AI Act forces laggards to retrofit.";
+  const out = T._titleFitSuggestions(text, 38, 12.0, 1.21);
+  assert(Array.isArray(out), "should return an array");
+  assert(out.length >= 2 && out.length <= 3, "expected 2-3 suggestions, got " + out.length);
+  const kinds = out.map((s) => s.kind);
+  assert(kinds.includes("rewrite-shorter"), "missing rewrite-shorter: " + kinds.join(","));
+  assert(kinds.includes("step-down-size"), "missing step-down-size: " + kinds.join(","));
+});
+
+t("titleFitSuggestions: rewrite-shorter reports maxChars budget at current size+box", () => {
+  const out = T._titleFitSuggestions("xxx", 38, 12.0, 1.21);
+  const rewrite = out.find((s) => s.kind === "rewrite-shorter");
+  assert(rewrite && typeof rewrite.maxChars === "number" && rewrite.maxChars > 0, "rewrite suggestion missing maxChars: " + JSON.stringify(rewrite));
+  // At 38pt × 12in box × 1.21in tall, ~2 lines fit; budget should be ~2 × maxCharsPerLine
+  assert(rewrite.maxChars < 200, "maxChars sanity (got " + rewrite.maxChars + ")");
+});
+
+t("titleFitSuggestions: step-down-size picks the next-smaller whitelist size that fits", () => {
+  const text = "Winners industrialize a few reengineered journeys on a governed, model-agnostic foundation — before the EU AI Act forces laggards to retrofit.";
+  const out = T._titleFitSuggestions(text, 38, 12.0, 1.21);
+  const stepDown = out.find((s) => s.kind === "step-down-size");
+  assert(stepDown, "missing step-down-size");
+  assert([26, 32, 36].includes(stepDown.fontSize), "step-down should be smaller content size, got " + stepDown.fontSize);
+  assert(typeof stepDown.h === "number" && stepDown.h > 1.21, "step-down should widen h to fit, got " + stepDown.h);
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) {
   console.log("\nFailures:");

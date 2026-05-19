@@ -112,6 +112,67 @@ function _measureTitleFit(text, fontSize, boxW, boxH) {
   return { lines, lineHeightIn, totalHeightIn, fits, overflowIn, maxCharsPerLine };
 }
 
+/**
+ * Suggest 2-3 named alternatives when a title doesn't fit. Three levers:
+ *   - rewrite-shorter: keep size+box, report char budget for the current box
+ *   - step-down-size:  next-smaller whitelist size + min `h` that fits text
+ *   - dense-size:      smallest dense size (26pt) at the current box
+ *
+ * Returned shape: [{ kind, fontSize?, h?, maxChars?, note }]
+ */
+function _titleFitSuggestions(text, currentFontSize, boxW, boxH) {
+  const out = [];
+
+  // 1) rewrite-shorter: how many chars fit in the current box × current size?
+  const cur = _measureTitleFit("x", currentFontSize, boxW, boxH);
+  const lineCapacity = Math.max(1, Math.floor((boxH * 1.05) / cur.lineHeightIn));
+  const maxChars = lineCapacity * cur.maxCharsPerLine;
+  out.push({
+    kind: "rewrite-shorter",
+    fontSize: currentFontSize,
+    maxChars,
+    note: `Rewrite to ≤ ${maxChars} chars at ${currentFontSize}pt to fit ${lineCapacity} line(s) in the current box.`,
+  });
+
+  // 2) step-down-size: pick next-smaller content-tier size (26/32/36/38 only —
+  //    cover sizes 54+ are role-bound and not appropriate as a step-down).
+  const contentTier = [38, 36, 32, 26];
+  const idx = contentTier.indexOf(currentFontSize);
+  let smaller = null;
+  if (idx >= 0 && idx < contentTier.length - 1) {
+    smaller = contentTier[idx + 1];
+  } else if (idx < 0) {
+    // Caller is at a non-content size (cover etc.); offer the largest content size.
+    smaller = contentTier[0];
+  }
+  if (smaller != null) {
+    const m = _measureTitleFit(text, smaller, boxW, 1000); // unbounded h to count lines
+    const minH = +(m.totalHeightIn).toFixed(2);
+    out.push({
+      kind: "step-down-size",
+      fontSize: smaller,
+      h: minH,
+      note: `Drop to ${smaller}pt and widen the H1 box to h≈${minH}in to fit the current title.`,
+    });
+  }
+
+  // 3) dense-size: smallest dense size at current box. Skip if step-down already
+  //    chose 26pt (avoid duplicate).
+  if (smaller !== 26) {
+    const denseFits = _measureTitleFit(text, 26, boxW, boxH);
+    out.push({
+      kind: "dense-size",
+      fontSize: 26,
+      h: boxH,
+      note: denseFits.fits
+        ? `Use 26pt at the current box (${boxH}in) — fits as-is.`
+        : `Even 26pt overflows the current box; rewrite or split the title.`,
+    });
+  }
+
+  return out;
+}
+
 // ─── Per-slide tracking via symbols ──────────────────────────────────────────
 const SLIDE_META = Symbol.for("ps-pptx.slide-meta");
 const PRES_REGISTRY = Symbol.for("ps-pptx.pres-registry");
@@ -416,7 +477,7 @@ module.exports = {
   // helpers
   addLogo, addFooter, addSubheadTag, addH1, addBody, addBox,
   // measurement (exported for qa.js + tests)
-  _measureTitleFit,
+  _measureTitleFit, _titleFitSuggestions,
   // layout primitives
   row: layout.row,
   column: layout.column,
