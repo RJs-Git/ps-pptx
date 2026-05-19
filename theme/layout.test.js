@@ -342,6 +342,18 @@ t("addH1: short title at 38pt × default box does not throw", () => {
   T.addH1(slide, "Why we must act now", { fontSize: 38 });
 });
 
+t("qa.js synthetic regex: parses addH1 throw message", () => {
+  const slide = { addText: () => {}, addImage: () => {}, addShape: () => {} };
+  const text = "Winners industrialize a few reengineered journeys on a governed, model-agnostic foundation — before the EU AI Act forces laggards to retrofit.";
+  let msg = "";
+  try { T.addH1(slide, text, { fontSize: 38 }); } catch (e) { msg = e.message; }
+  const re = /\[ps-pptx\] addH1: title does not fit .* fontSize=(\d+)pt\. Measured (\d+) line\(s\) × ([\d.]+)in = ([\d.]+)in vs box h=([\d.]+)in \(overflow ([\d.]+)in\)/;
+  const m = re.exec(msg);
+  assert(m, "regex should match addH1 throw message: " + msg);
+  eq(+m[1], 38);
+  assert(+m[2] >= 3, "expected 3+ lines");
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) {
   console.log("\nFailures:");

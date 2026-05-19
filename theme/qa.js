@@ -137,7 +137,40 @@ const layoutFindings = [];
     try {
       require(${JSON.stringify(SRC)});
     } catch (e) {
-      console.error(JSON.stringify({ kind: 'load-error', message: e.message }));
+      const slides = (typeof pres !== 'undefined' && pres && pres[Symbol.for('ps-pptx.pres-registry')]) || [];
+      const titleOverflows = [];
+      const PLACEMENT = Symbol.for('ps-pptx.placement-registry');
+      slides.forEach((s, i) => {
+        const recs = s[PLACEMENT] || [];
+        recs.forEach((r) => {
+          if (r.kind !== 'h1' || r.fontSize == null) return;
+          const fit = T._measureTitleFit(r.text || '', r.fontSize, r.w, r.h);
+          if (!fit.fits) {
+            const suggestions = T._titleFitSuggestions(r.text || '', r.fontSize, r.w, r.h);
+            titleOverflows.push({ slide: i + 1, fontSize: r.fontSize, boxW: r.w, boxH: r.h, lines: fit.lines, totalHeightIn: fit.totalHeightIn, overflowIn: fit.overflowIn, suggestions });
+          }
+        });
+      });
+      // Also try to extract a title-overflow from the throw message itself, since
+      // the throwing addH1 never records its placement. Match the [ps-pptx] addH1
+      // throw shape and add a synthetic entry for the slide that was being built
+      // (one past the last successfully-added slide).
+      const m = /\\[ps-pptx\\] addH1: title does not fit .* fontSize=(\\d+)pt\\. Measured (\\d+) line\\(s\\) × ([\\d.]+)in = ([\\d.]+)in vs box h=([\\d.]+)in \\(overflow ([\\d.]+)in\\)/.exec(e.message || '');
+      if (m) {
+        titleOverflows.push({
+          slide: slides.length + 1,
+          fontSize: +m[1],
+          boxW: null,
+          boxH: +m[5],
+          lines: +m[2],
+          totalHeightIn: +m[4],
+          overflowIn: +m[6],
+          suggestions: [],
+          fromThrow: true,
+        });
+      }
+      const payload = { kind: 'load-error', message: e.message, titleOverflows };
+      process.stdout.write('\\n__PS_QA_JSON__' + JSON.stringify(payload) + '\\n');
       process.exit(2);
     }
     if (!pres) { console.error(JSON.stringify({ kind: 'no-pres' })); process.exit(2); }
@@ -216,6 +249,10 @@ const layoutFindings = [];
             layoutFindings.push({ slide: slideNo, kind, message: detail });
             errors.push(`${kind}: slide ${slideNo}: ${detail}`);
           });
+        }
+        if (parsed.kind === "load-error") {
+          errors.push(`load-error: ${parsed.message.split('\n')[0]}`);
+          layoutFindings.push({ slide: null, kind: "load-error", message: parsed.message.split('\n')[0] });
         }
         if (parsed.warnings && parsed.warnings.length) {
           parsed.warnings.forEach((w) => {
