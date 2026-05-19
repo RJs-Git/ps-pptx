@@ -37,6 +37,8 @@ function recordPlacement(slide, kind, name, x, y, w, h, opts = {}) {
     reserved: opts.reserved || null,
     overFooter: !!opts.overFooter,
     fullBleed: !!opts.fullBleed,
+    fontSize: opts.fontSize != null ? +opts.fontSize : null,
+    text: opts.text != null ? String(opts.text) : null,
   });
 }
 

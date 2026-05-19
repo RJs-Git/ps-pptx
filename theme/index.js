@@ -341,7 +341,7 @@ function addH1(slide, text, opts = {}) {
     lineSpacingMultiple: 1.05,
     charSpacing: -0.5,
   });
-  layout.recordPlacement(slide, "h1", "addH1", h1x, h1y, h1w, h1h, { allowOverlap: !!opts.allowOverlap });
+  layout.recordPlacement(slide, "h1", "addH1", h1x, h1y, h1w, h1h, { allowOverlap: !!opts.allowOverlap, fontSize, text });
 }
 
 function addBody(slide, text, opts = {}) {
