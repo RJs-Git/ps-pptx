@@ -357,6 +357,36 @@ t("qa.js synthetic regex: parses addH1 throw message", () => {
   assert(+m[2] >= 3, "expected 3+ lines");
 });
 
+// ─── parityGroup ─────────────────────────────────────────────────────────────
+t("parityGroup: matched sizes produce no finding", () => {
+  const s = mockSlide();
+  s[Symbol.for("ps-pptx.slide-meta")] = { role: "content" };
+  layout.recordPlacement(s, "body", "L", 1, 2, 5, 4, { parityGroup: "g" });
+  layout.recordPlacement(s, "body", "R", 7, 2, 5, 4, { parityGroup: "g" });
+  const r = layout.validateLayout({}, [s], GEOM);
+  assert(!r.errors.some((e) => /parity/.test(e)), "no parity error expected");
+  assert(!r.warnings.some((w) => /parity/.test(w)), "no parity warning expected");
+});
+
+t("parityGroup: >50% size gap errors", () => {
+  const s = mockSlide();
+  s[Symbol.for("ps-pptx.slide-meta")] = { role: "content" };
+  layout.recordPlacement(s, "body", "L", 1, 2, 5, 1, { parityGroup: "g" });
+  layout.recordPlacement(s, "body", "R", 7, 2, 5, 4, { parityGroup: "g" });
+  const r = layout.validateLayout({}, [s], GEOM);
+  assert(r.errors.some((e) => /parity.*size gap/.test(e)), "expected parity error: " + r.errors.join(" | "));
+});
+
+t("parityGroup: 30-50% gap warns", () => {
+  const s = mockSlide();
+  s[Symbol.for("ps-pptx.slide-meta")] = { role: "content" };
+  layout.recordPlacement(s, "body", "L", 1, 2, 5, 2.5, { parityGroup: "g" });
+  layout.recordPlacement(s, "body", "R", 7, 2, 5, 4, { parityGroup: "g" });
+  const r = layout.validateLayout({}, [s], GEOM);
+  assert(r.warnings.some((w) => /parity/.test(w)), "expected parity warning: " + r.warnings.join(" | "));
+  assert(!r.errors.some((e) => /parity/.test(e)), "should not error at 37%: " + r.errors.join(" | "));
+});
+
 // ─── addFooter date default ──────────────────────────────────────────────────
 t("addFooter: default dateText is current MM.YYYY", () => {
   const captured = [];

@@ -312,6 +312,29 @@ function validateLayout(pres, slides, geom) {
         }
       }
     }
+
+    // ── Parity-group fill check ──
+    // Cells in the same group should have similar bounding-box sizes; large
+    // gaps signal an unbalanced layout (e.g., one column full, the other
+    // half-empty).
+    const groups = {};
+    recs.forEach((r) => {
+      if (!r.parityGroup) return;
+      (groups[r.parityGroup] = groups[r.parityGroup] || []).push(r);
+    });
+    Object.entries(groups).forEach(([group, members]) => {
+      if (members.length < 2) return;
+      const areas = members.map((m) => m.w * m.h);
+      const lo = Math.min(...areas);
+      const hi = Math.max(...areas);
+      if (hi <= 0) return;
+      const ratioGap = (hi - lo) / hi;
+      if (ratioGap > 0.5) {
+        errors.push(`slide ${idx}: parity — group "${group}" has ${(ratioGap * 100).toFixed(0)}% size gap between largest and smallest member; cells look mismatched.`);
+      } else if (ratioGap > 0.3) {
+        warnings.push(`slide ${idx}: parity — group "${group}" has ${(ratioGap * 100).toFixed(0)}% size gap between largest and smallest member.`);
+      }
+    });
   });
 
   return { errors, warnings };

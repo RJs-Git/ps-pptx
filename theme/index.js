@@ -406,7 +406,7 @@ function addBody(slide, text, opts = {}) {
   const w = opts.w != null ? opts.w : CONTENT_W;
   const h = opts.h != null ? opts.h : 3.2;
   if (!opts.skipBoundsCheck) checkBounds("addBody", x, y, w, h, opts);
-  layout.recordPlacement(slide, "body", opts.name || "addBody", x, y, w, h, { allowOverlap: !!opts.allowOverlap, bottomBandPolicy: opts.bottomBandPolicy || (opts.fullBleed ? "fullBleed" : "enforce") });
+  layout.recordPlacement(slide, "body", opts.name || "addBody", x, y, w, h, { allowOverlap: !!opts.allowOverlap, bottomBandPolicy: opts.bottomBandPolicy || (opts.fullBleed ? "fullBleed" : "enforce"), parityGroup: opts.parityGroup });
   slide.addText(text, {
     x, y, w, h,
     fontFace: opts.fontFace || FONT_BODY,
@@ -445,7 +445,7 @@ function addBox(slide, opts) {
     throw new Error(`[ps-pptx] addBox: requires { x, y, w, h }.`);
   }
   checkBounds("addBox", opts.x, opts.y, opts.w, opts.h, opts);
-  layout.recordPlacement(slide, "box", opts.name || "addBox", opts.x, opts.y, opts.w, opts.h, { allowOverlap: !!opts.allowOverlap, bottomBandPolicy: opts.bottomBandPolicy || (opts.fullBleed ? "fullBleed" : "enforce") });
+  layout.recordPlacement(slide, "box", opts.name || "addBox", opts.x, opts.y, opts.w, opts.h, { allowOverlap: !!opts.allowOverlap, bottomBandPolicy: opts.bottomBandPolicy || (opts.fullBleed ? "fullBleed" : "enforce"), parityGroup: opts.parityGroup });
   const fill = _normalizeColorArg("addBox.fill", opts.fill);
   const line = _normalizeColorArg("addBox.line", opts.line);
   if (fill) checkColor("addBox.fill", fill.color);

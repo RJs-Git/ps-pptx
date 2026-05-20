@@ -39,6 +39,7 @@ module.exports = function scqa3col(slide, T, content) {
         addBody(slide, col.body, {
           x: rect.x, y: rect.y + labelH + 0.1, w: rect.w, h: rect.h - labelH - 0.1,
           fontSize: 11,
+          parityGroup: "scqa3col",
           name: `scqa3col.body[${col.label}]`,
         });
       },
