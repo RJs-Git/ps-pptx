@@ -51,6 +51,7 @@ module.exports = function beforeAfter(slide, T, content) {
           x: rect.x + 0.2, y: rect.y + 0.75, w: rect.w - 0.4, h: rect.h - 0.95,
           fontSize: 11,
           allowOverlap: !!fill,
+          parityGroup: "beforeAfter",
           name: `beforeAfter.${key}.body`,
         });
       },

@@ -215,6 +215,9 @@ t("validateLayout: chrome (logo, footer, page-num) is excluded from collision pa
   // than its reserved rect and the template intentionally coexists.
   layout.recordPlacement(s, "logo", "addLogo", 0.667, 0.667, 1.149, 0.624, { reserved: "logo" });
   layout.recordPlacement(s, "h1", "addH1", 0.667, 0.758, 12, 1.21);
+  // Body placed so center-of-mass is balanced (otherwise the tier-2 COM error
+  // unrelated to chrome would trigger).
+  layout.recordPlacement(s, "body", "addBody", 0.667, 2.5, 12, 3.5);
   layout.recordPlacement(s, "footer", "addFooter", 0.667, 6.875, 5.795, 0.18, { reserved: "footer", overFooter: true });
   const r = layout.validateLayout({}, [s], GEOM);
   eq(r.errors.length, 0, "chrome should not collide with content: " + r.errors.join(" | "));
@@ -352,6 +355,167 @@ t("qa.js synthetic regex: parses addH1 throw message", () => {
   assert(m, "regex should match addH1 throw message: " + msg);
   eq(+m[1], 38);
   assert(+m[2] >= 3, "expected 3+ lines");
+});
+
+// ─── parityGroup ─────────────────────────────────────────────────────────────
+t("parityGroup: matched sizes produce no finding", () => {
+  const s = mockSlide();
+  s[Symbol.for("ps-pptx.slide-meta")] = { role: "content" };
+  layout.recordPlacement(s, "body", "L", 1, 2, 5, 4, { parityGroup: "g" });
+  layout.recordPlacement(s, "body", "R", 7, 2, 5, 4, { parityGroup: "g" });
+  const r = layout.validateLayout({}, [s], GEOM);
+  assert(!r.errors.some((e) => /parity/.test(e)), "no parity error expected");
+  assert(!r.warnings.some((w) => /parity/.test(w)), "no parity warning expected");
+});
+
+t("parityGroup: >50% size gap errors", () => {
+  const s = mockSlide();
+  s[Symbol.for("ps-pptx.slide-meta")] = { role: "content" };
+  layout.recordPlacement(s, "body", "L", 1, 2, 5, 1, { parityGroup: "g" });
+  layout.recordPlacement(s, "body", "R", 7, 2, 5, 4, { parityGroup: "g" });
+  const r = layout.validateLayout({}, [s], GEOM);
+  assert(r.errors.some((e) => /parity.*size gap/.test(e)), "expected parity error: " + r.errors.join(" | "));
+});
+
+t("parityGroup: 30-50% gap warns", () => {
+  const s = mockSlide();
+  s[Symbol.for("ps-pptx.slide-meta")] = { role: "content" };
+  layout.recordPlacement(s, "body", "L", 1, 2, 5, 2.5, { parityGroup: "g" });
+  layout.recordPlacement(s, "body", "R", 7, 2, 5, 4, { parityGroup: "g" });
+  const r = layout.validateLayout({}, [s], GEOM);
+  assert(r.warnings.some((w) => /parity/.test(w)), "expected parity warning: " + r.warnings.join(" | "));
+  assert(!r.errors.some((e) => /parity/.test(e)), "should not error at 37%: " + r.errors.join(" | "));
+});
+
+// ─── addFooter date default ──────────────────────────────────────────────────
+t("addFooter: default dateText is current MM.YYYY", () => {
+  const captured = [];
+  const slide = {
+    addText: (txt) => { captured.push(txt); },
+    addImage: () => {}, addShape: () => {},
+  };
+  T.addFooter(slide);
+  const arr = captured[0];
+  assert(Array.isArray(arr), "expected text array");
+  const date = arr[2] && arr[2].text;
+  const re = /^\d{2}\.\d{4}$/;
+  assert(re.test(date), `expected MM.YYYY format, got "${date}"`);
+});
+
+t("addFooter: explicit dateText overrides the default", () => {
+  const captured = [];
+  const slide = { addText: (txt) => { captured.push(txt); }, addImage: () => {}, addShape: () => {} };
+  T.addFooter(slide, { dateText: "Q1 2026" });
+  assert(captured[0][2].text === "Q1 2026", "expected explicit override, got " + captured[0][2].text);
+});
+
+// ─── addBodyDense ────────────────────────────────────────────────────────────
+t("addBody: 9pt without display throws with addBodyDense hint", () => {
+  const slide = { addText: () => {}, addImage: () => {}, addShape: () => {} };
+  let caught;
+  try { T.addBody(slide, "x", { fontSize: 9 }); } catch (e) { caught = e; }
+  assert(caught, "expected throw");
+  assert(/addBodyDense/.test(caught.message), "expected addBodyDense hint: " + caught.message);
+  assert(/data-dense/.test(caught.message), "expected data-dense hint: " + caught.message);
+});
+
+t("addBodyDense: requires markRole(data-dense)", () => {
+  const slide = { addText: () => {}, addImage: () => {}, addShape: () => {} };
+  expectThrow(() => T.addBodyDense(slide, "x", { fontSize: 9 }), /requires markRole.*data-dense/);
+});
+
+t("addBodyDense: passes when role tag present", () => {
+  const slide = { addText: () => {}, addImage: () => {}, addShape: () => {} };
+  T.markRole(slide, "data-dense");
+  T.addBodyDense(slide, "x", { fontSize: 9, x: 0.667, y: 2, w: 6, h: 2 });
+});
+
+t("addBodyDense: rejects out-of-range font", () => {
+  const slide = { addText: () => {}, addImage: () => {}, addShape: () => {} };
+  T.markRole(slide, "data-dense");
+  expectThrow(() => T.addBodyDense(slide, "x", { fontSize: 8 }), /outside the dense range/);
+});
+
+// ─── color type-guard ────────────────────────────────────────────────────────
+t("checkColor: object input throws helpful message", () => {
+  const slide = { addText: () => {}, addImage: () => {}, addShape: () => {} };
+  expectThrow(() => T.addBox(slide, { x: 0.667, y: 2, w: 4, h: 1, shape: "rect", fill: { wrong: "E90130" }, name: "x" }), /expected a hex string or .*object/);
+});
+
+t("checkColor: malformed hex string throws", () => {
+  const slide = { addText: () => {}, addImage: () => {}, addShape: () => {} };
+  expectThrow(() => T.addBox(slide, { x: 0.667, y: 2, w: 4, h: 1, shape: "rect", fill: "not-a-color", name: "x" }), /not a 6-digit hex|not in the PS palette/);
+});
+
+t("addBox: string fill auto-promotes to { color }", () => {
+  const slide = { addText: () => {}, addImage: () => {}, addShape: (kind, opts) => { slide._lastShape = opts; } };
+  T.addBox(slide, { x: 0.667, y: 2, w: 4, h: 1, shape: "rect", fill: T.RED, name: "x" });
+  assert(slide._lastShape && slide._lastShape.fill && slide._lastShape.fill.color === T.RED, "expected fill normalized to object: " + JSON.stringify(slide._lastShape && slide._lastShape.fill));
+});
+
+// ─── density / center-of-mass severity tiers ─────────────────────────────────
+t("validateLayout: density >=95% errors when not data-dense", () => {
+  const s = mockSlide();
+  s[Symbol.for("ps-pptx.slide-meta")] = { role: "content" };
+  layout.recordPlacement(s, "body", "fillA", 0.667, 1, 12, 5.7);
+  const r = layout.validateLayout({}, [s], GEOM);
+  assert(r.errors.some((e) => /density/.test(e)), "expected density error: " + r.errors.join(" | "));
+});
+
+t("validateLayout: density >=95% with data-dense tag warns only", () => {
+  const s = mockSlide();
+  const m = { role: "content", tags: new Set(["data-dense"]) };
+  s[Symbol.for("ps-pptx.slide-meta")] = m;
+  layout.recordPlacement(s, "body", "fillA", 0.667, 1, 12, 5.7);
+  const r = layout.validateLayout({}, [s], GEOM);
+  assert(!r.errors.some((e) => /density/.test(e)), "data-dense should not error: " + r.errors.join(" | "));
+});
+
+t("validateLayout: center-of-mass >=30% errors", () => {
+  const s = mockSlide();
+  s[Symbol.for("ps-pptx.slide-meta")] = { role: "content" };
+  layout.recordPlacement(s, "body", "blob", 0.667, 5.5, 3, 1.0);
+  const r = layout.validateLayout({}, [s], GEOM);
+  assert(r.errors.some((e) => /center-of-mass/.test(e)), "expected center-of-mass error: " + r.errors.join(" | "));
+});
+
+t("markRole: accepts data-dense as a tag", () => {
+  const s = mockSlide();
+  T.markRole(s, "content");
+  T.markRole(s, "data-dense");
+  assert(T.hasTag(s, "data-dense"), "expected data-dense tag");
+});
+
+// ─── bottomBandPolicy ─────────────────────────────────────────────────────────
+t("bottomBandPolicy: enforce throws when y+h crosses footer band", () => {
+  const slide = { addText: () => {}, addImage: () => {}, addShape: () => {} };
+  expectThrow(() => T.addBody(slide, "x", { x: 0.667, y: 6.0, w: 12, h: 1.5 }), /footer band/);
+});
+
+t("bottomBandPolicy: fullBleed allows extending to slide bottom", () => {
+  const slide = { addText: () => {}, addImage: () => {}, addShape: () => {} };
+  T.addBox(slide, { x: 0, y: 0, w: 13.333, h: 7.5, bottomBandPolicy: "fullBleed", shape: "rect", fill: T.GRAY_LIGHT, name: "bleed" });
+});
+
+t("bottomBandPolicy: sectionDivider requires markRole(section-divider)", () => {
+  const s = mockSlide();
+  layout.recordPlacement(s, "body", "divtxt", 0.667, 5, 12, 2, { bottomBandPolicy: "sectionDivider" });
+  s[Symbol.for("ps-pptx.slide-meta")] = { role: "content" };
+  const r = layout.validateLayout({}, [s], GEOM);
+  assert(r.errors.some((e) => /sectionDivider.*not.*section-divider/.test(e)), "expected sectionDivider role error: " + r.errors.join(" | "));
+});
+
+t("bottomBandPolicy: sectionDivider with correct markRole passes", () => {
+  const s = mockSlide();
+  s[Symbol.for("ps-pptx.slide-meta")] = { role: "section-divider" };
+  layout.recordPlacement(s, "body", "divtxt", 0.667, 5, 12, 2, { bottomBandPolicy: "sectionDivider" });
+  const r = layout.validateLayout({}, [s], GEOM);
+  assert(!r.errors.some((e) => /sectionDivider/.test(e)), "no sectionDivider error expected: " + r.errors.join(" | "));
+});
+
+t("bottomBandPolicy: unknown value throws", () => {
+  const slide = { addText: () => {}, addImage: () => {}, addShape: () => {} };
+  expectThrow(() => T.addBox(slide, { x: 0.667, y: 1, w: 4, h: 1, bottomBandPolicy: "loose", shape: "rect", fill: T.RED, name: "x" }), /unknown bottomBandPolicy/);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

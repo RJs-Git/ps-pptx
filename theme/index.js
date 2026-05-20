@@ -193,22 +193,50 @@ function registerSlide(pres, slide) {
  * All other slides are treated as "content" and MUST have a footer.
  */
 function markRole(slide, role) {
-  const valid = ["cover", "section-divider", "thank-you", "end-card", "content"];
-  if (!valid.includes(role)) {
-    throw new Error(`[ps-pptx] markRole: role must be one of ${valid.join(", ")}, got "${role}"`);
+  const primaryRoles = ["cover", "section-divider", "thank-you", "end-card", "content"];
+  const tagRoles = ["data-dense"];
+  if (!primaryRoles.includes(role) && !tagRoles.includes(role)) {
+    throw new Error(`[ps-pptx] markRole: role must be one of ${[...primaryRoles, ...tagRoles].join(", ")}, got "${role}"`);
   }
-  meta(slide).role = role;
+  const m = meta(slide);
+  if (tagRoles.includes(role)) {
+    m.tags = m.tags || new Set();
+    m.tags.add(role);
+  } else {
+    m.role = role;
+  }
+}
+
+function hasTag(slide, tag) {
+  const m = slide[SLIDE_META];
+  return !!(m && m.tags && m.tags.has(tag));
 }
 
 function checkColor(name, val) {
   if (val == null) return;
-  const v = String(val).replace(/^#/, "").toUpperCase();
+  if (typeof val !== "string") {
+    throw new Error(
+      `[ps-pptx] ${name}: expected a hex string (e.g., "E90130"), got ${typeof val} (${JSON.stringify(val).slice(0, 80)}). ` +
+      `If you meant to set a fill object, pass { color: "E90130" } as the fill option, not as the color string itself.`
+    );
+  }
+  const v = val.replace(/^#/, "").toUpperCase();
+  if (!/^[0-9A-F]{6}$/.test(v)) {
+    throw new Error(`[ps-pptx] ${name}: color "${val}" is not a 6-digit hex. Use a token (RED, RED_DARK, PINK, BLACK, WHITE, GRAY_MID, GRAY_LIGHT, CHART_GRAY).`);
+  }
   if (!ALLOWED_COLORS_SET.has(v)) {
     throw new Error(
       `[ps-pptx] ${name}: color "${val}" is not in the PS palette. ` +
       `Allowed: RED(E90130) RED_DARK(AE0021) PINK(FA8C9A) BLACK WHITE GRAY_MID(6B6B6B) GRAY_LIGHT(D9D9D9) CHART_GRAY(BBBBBB).`
     );
   }
+}
+
+function _normalizeColorArg(name, val) {
+  if (val == null) return val;
+  if (typeof val === "string") return { color: val };
+  if (typeof val === "object" && typeof val.color === "string") return val;
+  throw new Error(`[ps-pptx] ${name}: expected a hex string or { color, transparency? } object, got ${typeof val} (${JSON.stringify(val).slice(0, 80)}).`);
 }
 
 function checkFont(name, val) {
@@ -222,15 +250,28 @@ function checkFont(name, val) {
 }
 
 function checkBounds(name, x, y, w, h, opts = {}) {
-  if (opts.fullBleed) return;
+  const policy = opts.bottomBandPolicy || (opts.fullBleed ? "fullBleed" : "enforce");
   const eps = 0.01;
-  if (x < MARGIN_L - eps) throw new Error(`[ps-pptx] ${name}: x=${x} crosses left margin (${MARGIN_L}). Pass { fullBleed: true } if intentional.`);
-  if (x + w > W - MARGIN_R + eps) throw new Error(`[ps-pptx] ${name}: x+w=${(x + w).toFixed(3)} crosses right margin (${(W - MARGIN_R).toFixed(3)}).`);
-  if (y + h > FOOTER_BAND_TOP + eps && !opts.overFooter) {
-    throw new Error(`[ps-pptx] ${name}: y+h=${(y + h).toFixed(3)} crosses the footer band (>${FOOTER_BAND_TOP}). The footer text sits at y=6.875; content past that collides with it.`);
+  if (policy !== "fullBleed") {
+    if (x < MARGIN_L - eps) throw new Error(`[ps-pptx] ${name}: x=${x} crosses left margin (${MARGIN_L}). Pass { bottomBandPolicy: "fullBleed" } for full-bleed images.`);
+    if (x + w > W - MARGIN_R + eps) throw new Error(`[ps-pptx] ${name}: x+w=${(x + w).toFixed(3)} crosses right margin (${(W - MARGIN_R).toFixed(3)}).`);
+  } else {
+    if (x < 0 - eps) throw new Error(`[ps-pptx] ${name}: x=${x} extends off the slide.`);
+    if (x + w > W + eps) throw new Error(`[ps-pptx] ${name}: x+w=${(x + w).toFixed(3)} extends past the slide width (${W}).`);
   }
-  if (y < 0 - eps || y + h > H + eps) {
-    throw new Error(`[ps-pptx] ${name}: box y=${y}..${(y + h).toFixed(3)} extends off the slide (0–${H}).`);
+  if (policy === "enforce") {
+    if (y + h > FOOTER_BAND_TOP + eps) {
+      throw new Error(`[ps-pptx] ${name}: y+h=${(y + h).toFixed(3)} crosses the footer band (>${FOOTER_BAND_TOP}). The footer text sits at y=6.875; content past that collides with it. For full-bleed images use { bottomBandPolicy: "fullBleed" }; for section-divider text use { bottomBandPolicy: "sectionDivider" } and markRole(slide, "section-divider").`);
+    }
+  } else if (policy === "fullBleed" || policy === "sectionDivider") {
+    if (y + h > H + eps) {
+      throw new Error(`[ps-pptx] ${name}: y+h=${(y + h).toFixed(3)} extends past the slide bottom (${H}).`);
+    }
+  } else {
+    throw new Error(`[ps-pptx] ${name}: unknown bottomBandPolicy "${policy}". Allowed: "enforce" | "fullBleed" | "sectionDivider".`);
+  }
+  if (y < 0 - eps) {
+    throw new Error(`[ps-pptx] ${name}: box y=${y} extends above the slide.`);
   }
 }
 
@@ -257,7 +298,12 @@ function addFooter(slide, opts = {}) {
   if (cu !== RED && cu !== WHITE && cu !== BLACK) {
     throw new Error(`[ps-pptx] addFooter: color must be RED, WHITE, or BLACK. Got ${color}.`);
   }
-  const dateText = opts.dateText || "XX.2026";
+  let dateText = opts.dateText;
+  if (!dateText) {
+    const now = new Date();
+    const mm = String(now.getMonth() + 1).padStart(2, "0");
+    dateText = `${mm}.${now.getFullYear()}`;
+  }
   const pageNum = opts.pageNum;
   meta(slide).footer = true;
   slide.addText(
@@ -271,13 +317,13 @@ function addFooter(slide, opts = {}) {
       fontFace: FONT_MONO, fontSize: 8, color, charSpacing: -0.5, margin: 0, valign: "middle"
     }
   );
-  layout.recordPlacement(slide, "footer", "addFooter", FOOTER_X, FOOTER_Y, FOOTER_W, FOOTER_H, { reserved: "footer", overFooter: true });
+  layout.recordPlacement(slide, "footer", "addFooter", FOOTER_X, FOOTER_Y, FOOTER_W, FOOTER_H, { reserved: "footer", bottomBandPolicy: "fullBleed" });
   if (pageNum != null) {
     slide.addText(String(pageNum), {
       x: PAGE_X, y: PAGE_Y, w: PAGE_W, h: PAGE_H,
       fontFace: FONT_MONO, fontSize: 8, color, align: "right", charSpacing: -0.5, margin: 0, valign: "middle"
     });
-    layout.recordPlacement(slide, "page-num", "addFooter.pageNum", PAGE_X, PAGE_Y, PAGE_W, PAGE_H, { reserved: "page-num", overFooter: true });
+    layout.recordPlacement(slide, "page-num", "addFooter.pageNum", PAGE_X, PAGE_Y, PAGE_W, PAGE_H, { reserved: "page-num", bottomBandPolicy: "fullBleed" });
   }
 }
 
@@ -349,14 +395,18 @@ function addBody(slide, text, opts = {}) {
   const color = opts.color || BLACK;
   checkColor("addBody", color);
   if (!opts.display && (fontSize < 10 || fontSize > 12)) {
-    throw new Error(`[ps-pptx] addBody: fontSize ${fontSize} is outside the body range 10–12pt. For oversized stats/numerals, pass { display: true } and consider using FONT_MONO_LIGHT or FONT_TITLE directly via addBox.`);
+    throw new Error(
+      `[ps-pptx] addBody: fontSize ${fontSize} is outside the body range 10–12pt. ` +
+      `For data-dense slides (sources lists, deployment tables), use addBodyDense + markRole(slide, "data-dense"). ` +
+      `For oversized stats/numerals, pass { display: true }.`
+    );
   }
   const x = opts.x != null ? opts.x : MARGIN_L;
   const y = opts.y != null ? opts.y : 3.4;
   const w = opts.w != null ? opts.w : CONTENT_W;
   const h = opts.h != null ? opts.h : 3.2;
   if (!opts.skipBoundsCheck) checkBounds("addBody", x, y, w, h, opts);
-  layout.recordPlacement(slide, "body", opts.name || "addBody", x, y, w, h, { allowOverlap: !!opts.allowOverlap, overFooter: !!opts.overFooter, fullBleed: !!opts.fullBleed });
+  layout.recordPlacement(slide, "body", opts.name || "addBody", x, y, w, h, { allowOverlap: !!opts.allowOverlap, bottomBandPolicy: opts.bottomBandPolicy || (opts.fullBleed ? "fullBleed" : "enforce"), parityGroup: opts.parityGroup });
   slide.addText(text, {
     x, y, w, h,
     fontFace: opts.fontFace || FONT_BODY,
@@ -372,6 +422,17 @@ function addBody(slide, text, opts = {}) {
   });
 }
 
+function addBodyDense(slide, text, opts = {}) {
+  if (!hasTag(slide, "data-dense")) {
+    throw new Error(`[ps-pptx] addBodyDense: requires markRole(slide, "data-dense") on this slide. Dense type (9–10pt) is reserved for sources lists and deployment tables; on a normal content slide, use addBody at 10–12pt instead.`);
+  }
+  const fontSize = opts.fontSize != null ? opts.fontSize : 10;
+  if (fontSize < 9 || fontSize > 10) {
+    throw new Error(`[ps-pptx] addBodyDense: fontSize ${fontSize} is outside the dense range 9–10pt.`);
+  }
+  return addBody(slide, text, { ...opts, fontSize, name: opts.name || "addBodyDense", display: true });
+}
+
 /**
  * Bounds-checked text/shape wrapper. Use for any element you compose by hand
  * (callout cards, oversized display stats, sidebar columns) so the layout
@@ -384,13 +445,15 @@ function addBox(slide, opts) {
     throw new Error(`[ps-pptx] addBox: requires { x, y, w, h }.`);
   }
   checkBounds("addBox", opts.x, opts.y, opts.w, opts.h, opts);
-  layout.recordPlacement(slide, "box", opts.name || "addBox", opts.x, opts.y, opts.w, opts.h, { allowOverlap: !!opts.allowOverlap, overFooter: !!opts.overFooter, fullBleed: !!opts.fullBleed });
-  if (opts.fill) checkColor("addBox.fill", opts.fill.color || opts.fill);
-  if (opts.line) checkColor("addBox.line", opts.line.color || opts.line);
+  layout.recordPlacement(slide, "box", opts.name || "addBox", opts.x, opts.y, opts.w, opts.h, { allowOverlap: !!opts.allowOverlap, bottomBandPolicy: opts.bottomBandPolicy || (opts.fullBleed ? "fullBleed" : "enforce"), parityGroup: opts.parityGroup });
+  const fill = _normalizeColorArg("addBox.fill", opts.fill);
+  const line = _normalizeColorArg("addBox.line", opts.line);
+  if (fill) checkColor("addBox.fill", fill.color);
+  if (line) checkColor("addBox.line", line.color);
   if (opts.shape) {
     slide.addShape(opts.shape, {
       x: opts.x, y: opts.y, w: opts.w, h: opts.h,
-      fill: opts.fill, line: opts.line,
+      fill, line,
     });
   }
   if (opts.text != null) {
@@ -488,7 +551,7 @@ module.exports = {
   // assets
   LOGO_WHITE, LOGO_COLOR, LOGO_BLACK, MEDIA,
   // helpers
-  addLogo, addFooter, addSubheadTag, addH1, addBody, addBox,
+  addLogo, addFooter, addSubheadTag, addH1, addBody, addBodyDense, addBox,
   // measurement (exported for qa.js + tests)
   _measureTitleFit, _titleFitSuggestions,
   // layout primitives
@@ -497,5 +560,5 @@ module.exports = {
   grid: layout.grid,
   stack: layout.stack,
   // deck-level
-  markRole, instrument, validateDeck, writeDeck,
+  markRole, hasTag, instrument, validateDeck, writeDeck,
 };

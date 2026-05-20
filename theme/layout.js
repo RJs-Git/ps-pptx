@@ -35,10 +35,10 @@ function recordPlacement(slide, kind, name, x, y, w, h, opts = {}) {
     h: +h,
     allowOverlap: !!opts.allowOverlap,
     reserved: opts.reserved || null,
-    overFooter: !!opts.overFooter,
-    fullBleed: !!opts.fullBleed,
+    bottomBandPolicy: opts.bottomBandPolicy || (opts.fullBleed ? "fullBleed" : (opts.overFooter ? "fullBleed" : "enforce")),
     fontSize: opts.fontSize != null ? +opts.fontSize : null,
     text: opts.text != null ? String(opts.text) : null,
+    parityGroup: opts.parityGroup || null,
   });
 }
 
@@ -238,9 +238,17 @@ function validateLayout(pres, slides, geom) {
     // this for helpers that go through it, but raw shapes / primitives can
     // bypass; double-check here.
     recs.forEach((r) => {
-      if (r.reserved || r.overFooter || r.fullBleed) return;
-      if (r.y + r.h > geom.FOOTER_BAND_TOP + 0.02) {
-        errors.push(`slide ${idx}: "${r.name}" extends past footer band (y+h=${(r.y + r.h).toFixed(2)} > ${geom.FOOTER_BAND_TOP})`);
+      if (r.reserved) return;
+      const policy = r.bottomBandPolicy || "enforce";
+      if (policy === "enforce") {
+        if (r.y + r.h > geom.FOOTER_BAND_TOP + 0.02) {
+          errors.push(`slide ${idx}: "${r.name}" extends past footer band (y+h=${(r.y + r.h).toFixed(2)} > ${geom.FOOTER_BAND_TOP}). Set bottomBandPolicy: "fullBleed" for images or "sectionDivider" with markRole.`);
+        }
+      } else if (policy === "sectionDivider") {
+        const role = (slide[Symbol.for("ps-pptx.slide-meta")] || {}).role;
+        if (role !== "section-divider") {
+          errors.push(`slide ${idx}: "${r.name}" uses bottomBandPolicy "sectionDivider" but slide is not markRole(slide, "section-divider").`);
+        }
       }
     });
 
@@ -275,24 +283,58 @@ function validateLayout(pres, slides, geom) {
         });
         const contentArea = contentRect.w * contentRect.h;
         const fillRatio = filled / contentArea;
+        const slideMeta = slide[Symbol.for("ps-pptx.slide-meta")] || {};
+        const dataDense = !!(slideMeta.tags && slideMeta.tags.has("data-dense"));
         if (fillRatio < 0.15) {
-          warnings.push(`slide ${idx}: balance — content fills only ${(fillRatio * 100).toFixed(0)}% of the content area; slide looks empty`);
+          warnings.push(`slide ${idx}: density — content fills only ${(fillRatio * 100).toFixed(0)}% of the content area; slide looks empty`);
+        } else if (fillRatio >= 0.95) {
+          if (dataDense) {
+            warnings.push(`slide ${idx}: density — data-dense slide at ${(fillRatio * 100).toFixed(0)}% (info only)`);
+          } else {
+            errors.push(`slide ${idx}: density — content fills ${(fillRatio * 100).toFixed(0)}% of the content area (>=95%); slide is overstuffed. Trim content or markRole(slide, "data-dense") if intentional.`);
+          }
         } else if (fillRatio > 0.85) {
-          warnings.push(`slide ${idx}: balance — content fills ${(fillRatio * 100).toFixed(0)}% of the content area; slide looks crowded`);
+          if (!dataDense) {
+            warnings.push(`slide ${idx}: density — content fills ${(fillRatio * 100).toFixed(0)}% of the content area; slide looks crowded`);
+          }
         }
         if (cWeight > 0) {
           const com = { x: cxNum / cWeight, y: cyNum / cWeight };
           const center = { x: contentRect.x + contentRect.w / 2, y: contentRect.y + contentRect.h / 2 };
           const dx = (com.x - center.x) / contentRect.w;
           const dy = (com.y - center.y) / contentRect.h;
-          if (Math.abs(dx) > 0.25 || Math.abs(dy) > 0.25) {
-            warnings.push(
-              `slide ${idx}: balance — content center-of-mass offset ${(dx * 100).toFixed(0)}% horizontally, ${(dy * 100).toFixed(0)}% vertically from content-area center`
-            );
+          const adx = Math.abs(dx), ady = Math.abs(dy);
+          if (adx >= 0.30 || ady >= 0.30) {
+            errors.push(`slide ${idx}: center-of-mass — offset ${(dx * 100).toFixed(0)}% horizontally, ${(dy * 100).toFixed(0)}% vertically; slide is severely off-center.`);
+          } else if (adx > 0.25 || ady > 0.25) {
+            warnings.push(`slide ${idx}: center-of-mass — offset ${(dx * 100).toFixed(0)}% horizontally, ${(dy * 100).toFixed(0)}% vertically from content-area center`);
           }
         }
       }
     }
+
+    // ── Parity-group fill check ──
+    // Cells in the same group should have similar bounding-box sizes; large
+    // gaps signal an unbalanced layout (e.g., one column full, the other
+    // half-empty).
+    const groups = {};
+    recs.forEach((r) => {
+      if (!r.parityGroup) return;
+      (groups[r.parityGroup] = groups[r.parityGroup] || []).push(r);
+    });
+    Object.entries(groups).forEach(([group, members]) => {
+      if (members.length < 2) return;
+      const areas = members.map((m) => m.w * m.h);
+      const lo = Math.min(...areas);
+      const hi = Math.max(...areas);
+      if (hi <= 0) return;
+      const ratioGap = (hi - lo) / hi;
+      if (ratioGap > 0.5) {
+        errors.push(`slide ${idx}: parity — group "${group}" has ${(ratioGap * 100).toFixed(0)}% size gap between largest and smallest member; cells look mismatched.`);
+      } else if (ratioGap > 0.3) {
+        warnings.push(`slide ${idx}: parity — group "${group}" has ${(ratioGap * 100).toFixed(0)}% size gap between largest and smallest member.`);
+      }
+    });
   });
 
   return { errors, warnings };
