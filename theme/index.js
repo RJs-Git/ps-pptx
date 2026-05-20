@@ -298,7 +298,12 @@ function addFooter(slide, opts = {}) {
   if (cu !== RED && cu !== WHITE && cu !== BLACK) {
     throw new Error(`[ps-pptx] addFooter: color must be RED, WHITE, or BLACK. Got ${color}.`);
   }
-  const dateText = opts.dateText || "XX.2026";
+  let dateText = opts.dateText;
+  if (!dateText) {
+    const now = new Date();
+    const mm = String(now.getMonth() + 1).padStart(2, "0");
+    dateText = `${mm}.${now.getFullYear()}`;
+  }
   const pageNum = opts.pageNum;
   meta(slide).footer = true;
   slide.addText(

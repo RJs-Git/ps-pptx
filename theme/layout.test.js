@@ -357,6 +357,28 @@ t("qa.js synthetic regex: parses addH1 throw message", () => {
   assert(+m[2] >= 3, "expected 3+ lines");
 });
 
+// ─── addFooter date default ──────────────────────────────────────────────────
+t("addFooter: default dateText is current MM.YYYY", () => {
+  const captured = [];
+  const slide = {
+    addText: (txt) => { captured.push(txt); },
+    addImage: () => {}, addShape: () => {},
+  };
+  T.addFooter(slide);
+  const arr = captured[0];
+  assert(Array.isArray(arr), "expected text array");
+  const date = arr[2] && arr[2].text;
+  const re = /^\d{2}\.\d{4}$/;
+  assert(re.test(date), `expected MM.YYYY format, got "${date}"`);
+});
+
+t("addFooter: explicit dateText overrides the default", () => {
+  const captured = [];
+  const slide = { addText: (txt) => { captured.push(txt); }, addImage: () => {}, addShape: () => {} };
+  T.addFooter(slide, { dateText: "Q1 2026" });
+  assert(captured[0][2].text === "Q1 2026", "expected explicit override, got " + captured[0][2].text);
+});
+
 // ─── addBodyDense ────────────────────────────────────────────────────────────
 t("addBody: 9pt without display throws with addBodyDense hint", () => {
   const slide = { addText: () => {}, addImage: () => {}, addShape: () => {} };
