@@ -354,6 +354,38 @@ t("qa.js synthetic regex: parses addH1 throw message", () => {
   assert(+m[2] >= 3, "expected 3+ lines");
 });
 
+// ─── bottomBandPolicy ─────────────────────────────────────────────────────────
+t("bottomBandPolicy: enforce throws when y+h crosses footer band", () => {
+  const slide = { addText: () => {}, addImage: () => {}, addShape: () => {} };
+  expectThrow(() => T.addBody(slide, "x", { x: 0.667, y: 6.0, w: 12, h: 1.5 }), /footer band/);
+});
+
+t("bottomBandPolicy: fullBleed allows extending to slide bottom", () => {
+  const slide = { addText: () => {}, addImage: () => {}, addShape: () => {} };
+  T.addBox(slide, { x: 0, y: 0, w: 13.333, h: 7.5, bottomBandPolicy: "fullBleed", shape: "rect", fill: T.GRAY_LIGHT, name: "bleed" });
+});
+
+t("bottomBandPolicy: sectionDivider requires markRole(section-divider)", () => {
+  const s = mockSlide();
+  layout.recordPlacement(s, "body", "divtxt", 0.667, 5, 12, 2, { bottomBandPolicy: "sectionDivider" });
+  s[Symbol.for("ps-pptx.slide-meta")] = { role: "content" };
+  const r = layout.validateLayout({}, [s], GEOM);
+  assert(r.errors.some((e) => /sectionDivider.*not.*section-divider/.test(e)), "expected sectionDivider role error: " + r.errors.join(" | "));
+});
+
+t("bottomBandPolicy: sectionDivider with correct markRole passes", () => {
+  const s = mockSlide();
+  s[Symbol.for("ps-pptx.slide-meta")] = { role: "section-divider" };
+  layout.recordPlacement(s, "body", "divtxt", 0.667, 5, 12, 2, { bottomBandPolicy: "sectionDivider" });
+  const r = layout.validateLayout({}, [s], GEOM);
+  assert(!r.errors.some((e) => /sectionDivider/.test(e)), "no sectionDivider error expected: " + r.errors.join(" | "));
+});
+
+t("bottomBandPolicy: unknown value throws", () => {
+  const slide = { addText: () => {}, addImage: () => {}, addShape: () => {} };
+  expectThrow(() => T.addBox(slide, { x: 0.667, y: 1, w: 4, h: 1, bottomBandPolicy: "loose", shape: "rect", fill: T.RED, name: "x" }), /unknown bottomBandPolicy/);
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) {
   console.log("\nFailures:");

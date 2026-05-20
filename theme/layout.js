@@ -35,10 +35,10 @@ function recordPlacement(slide, kind, name, x, y, w, h, opts = {}) {
     h: +h,
     allowOverlap: !!opts.allowOverlap,
     reserved: opts.reserved || null,
-    overFooter: !!opts.overFooter,
-    fullBleed: !!opts.fullBleed,
+    bottomBandPolicy: opts.bottomBandPolicy || (opts.fullBleed ? "fullBleed" : (opts.overFooter ? "fullBleed" : "enforce")),
     fontSize: opts.fontSize != null ? +opts.fontSize : null,
     text: opts.text != null ? String(opts.text) : null,
+    parityGroup: opts.parityGroup || null,
   });
 }
 
@@ -238,9 +238,17 @@ function validateLayout(pres, slides, geom) {
     // this for helpers that go through it, but raw shapes / primitives can
     // bypass; double-check here.
     recs.forEach((r) => {
-      if (r.reserved || r.overFooter || r.fullBleed) return;
-      if (r.y + r.h > geom.FOOTER_BAND_TOP + 0.02) {
-        errors.push(`slide ${idx}: "${r.name}" extends past footer band (y+h=${(r.y + r.h).toFixed(2)} > ${geom.FOOTER_BAND_TOP})`);
+      if (r.reserved) return;
+      const policy = r.bottomBandPolicy || "enforce";
+      if (policy === "enforce") {
+        if (r.y + r.h > geom.FOOTER_BAND_TOP + 0.02) {
+          errors.push(`slide ${idx}: "${r.name}" extends past footer band (y+h=${(r.y + r.h).toFixed(2)} > ${geom.FOOTER_BAND_TOP}). Set bottomBandPolicy: "fullBleed" for images or "sectionDivider" with markRole.`);
+        }
+      } else if (policy === "sectionDivider") {
+        const role = (slide[Symbol.for("ps-pptx.slide-meta")] || {}).role;
+        if (role !== "section-divider") {
+          errors.push(`slide ${idx}: "${r.name}" uses bottomBandPolicy "sectionDivider" but slide is not markRole(slide, "section-divider").`);
+        }
       }
     });
 

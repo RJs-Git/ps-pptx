@@ -222,15 +222,28 @@ function checkFont(name, val) {
 }
 
 function checkBounds(name, x, y, w, h, opts = {}) {
-  if (opts.fullBleed) return;
+  const policy = opts.bottomBandPolicy || (opts.fullBleed ? "fullBleed" : "enforce");
   const eps = 0.01;
-  if (x < MARGIN_L - eps) throw new Error(`[ps-pptx] ${name}: x=${x} crosses left margin (${MARGIN_L}). Pass { fullBleed: true } if intentional.`);
-  if (x + w > W - MARGIN_R + eps) throw new Error(`[ps-pptx] ${name}: x+w=${(x + w).toFixed(3)} crosses right margin (${(W - MARGIN_R).toFixed(3)}).`);
-  if (y + h > FOOTER_BAND_TOP + eps && !opts.overFooter) {
-    throw new Error(`[ps-pptx] ${name}: y+h=${(y + h).toFixed(3)} crosses the footer band (>${FOOTER_BAND_TOP}). The footer text sits at y=6.875; content past that collides with it.`);
+  if (policy !== "fullBleed") {
+    if (x < MARGIN_L - eps) throw new Error(`[ps-pptx] ${name}: x=${x} crosses left margin (${MARGIN_L}). Pass { bottomBandPolicy: "fullBleed" } for full-bleed images.`);
+    if (x + w > W - MARGIN_R + eps) throw new Error(`[ps-pptx] ${name}: x+w=${(x + w).toFixed(3)} crosses right margin (${(W - MARGIN_R).toFixed(3)}).`);
+  } else {
+    if (x < 0 - eps) throw new Error(`[ps-pptx] ${name}: x=${x} extends off the slide.`);
+    if (x + w > W + eps) throw new Error(`[ps-pptx] ${name}: x+w=${(x + w).toFixed(3)} extends past the slide width (${W}).`);
   }
-  if (y < 0 - eps || y + h > H + eps) {
-    throw new Error(`[ps-pptx] ${name}: box y=${y}..${(y + h).toFixed(3)} extends off the slide (0–${H}).`);
+  if (policy === "enforce") {
+    if (y + h > FOOTER_BAND_TOP + eps) {
+      throw new Error(`[ps-pptx] ${name}: y+h=${(y + h).toFixed(3)} crosses the footer band (>${FOOTER_BAND_TOP}). The footer text sits at y=6.875; content past that collides with it. For full-bleed images use { bottomBandPolicy: "fullBleed" }; for section-divider text use { bottomBandPolicy: "sectionDivider" } and markRole(slide, "section-divider").`);
+    }
+  } else if (policy === "fullBleed" || policy === "sectionDivider") {
+    if (y + h > H + eps) {
+      throw new Error(`[ps-pptx] ${name}: y+h=${(y + h).toFixed(3)} extends past the slide bottom (${H}).`);
+    }
+  } else {
+    throw new Error(`[ps-pptx] ${name}: unknown bottomBandPolicy "${policy}". Allowed: "enforce" | "fullBleed" | "sectionDivider".`);
+  }
+  if (y < 0 - eps) {
+    throw new Error(`[ps-pptx] ${name}: box y=${y} extends above the slide.`);
   }
 }
 
@@ -271,13 +284,13 @@ function addFooter(slide, opts = {}) {
       fontFace: FONT_MONO, fontSize: 8, color, charSpacing: -0.5, margin: 0, valign: "middle"
     }
   );
-  layout.recordPlacement(slide, "footer", "addFooter", FOOTER_X, FOOTER_Y, FOOTER_W, FOOTER_H, { reserved: "footer", overFooter: true });
+  layout.recordPlacement(slide, "footer", "addFooter", FOOTER_X, FOOTER_Y, FOOTER_W, FOOTER_H, { reserved: "footer", bottomBandPolicy: "fullBleed" });
   if (pageNum != null) {
     slide.addText(String(pageNum), {
       x: PAGE_X, y: PAGE_Y, w: PAGE_W, h: PAGE_H,
       fontFace: FONT_MONO, fontSize: 8, color, align: "right", charSpacing: -0.5, margin: 0, valign: "middle"
     });
-    layout.recordPlacement(slide, "page-num", "addFooter.pageNum", PAGE_X, PAGE_Y, PAGE_W, PAGE_H, { reserved: "page-num", overFooter: true });
+    layout.recordPlacement(slide, "page-num", "addFooter.pageNum", PAGE_X, PAGE_Y, PAGE_W, PAGE_H, { reserved: "page-num", bottomBandPolicy: "fullBleed" });
   }
 }
 
@@ -356,7 +369,7 @@ function addBody(slide, text, opts = {}) {
   const w = opts.w != null ? opts.w : CONTENT_W;
   const h = opts.h != null ? opts.h : 3.2;
   if (!opts.skipBoundsCheck) checkBounds("addBody", x, y, w, h, opts);
-  layout.recordPlacement(slide, "body", opts.name || "addBody", x, y, w, h, { allowOverlap: !!opts.allowOverlap, overFooter: !!opts.overFooter, fullBleed: !!opts.fullBleed });
+  layout.recordPlacement(slide, "body", opts.name || "addBody", x, y, w, h, { allowOverlap: !!opts.allowOverlap, bottomBandPolicy: opts.bottomBandPolicy || (opts.fullBleed ? "fullBleed" : "enforce") });
   slide.addText(text, {
     x, y, w, h,
     fontFace: opts.fontFace || FONT_BODY,
@@ -384,7 +397,7 @@ function addBox(slide, opts) {
     throw new Error(`[ps-pptx] addBox: requires { x, y, w, h }.`);
   }
   checkBounds("addBox", opts.x, opts.y, opts.w, opts.h, opts);
-  layout.recordPlacement(slide, "box", opts.name || "addBox", opts.x, opts.y, opts.w, opts.h, { allowOverlap: !!opts.allowOverlap, overFooter: !!opts.overFooter, fullBleed: !!opts.fullBleed });
+  layout.recordPlacement(slide, "box", opts.name || "addBox", opts.x, opts.y, opts.w, opts.h, { allowOverlap: !!opts.allowOverlap, bottomBandPolicy: opts.bottomBandPolicy || (opts.fullBleed ? "fullBleed" : "enforce") });
   if (opts.fill) checkColor("addBox.fill", opts.fill.color || opts.fill);
   if (opts.line) checkColor("addBox.line", opts.line.color || opts.line);
   if (opts.shape) {
