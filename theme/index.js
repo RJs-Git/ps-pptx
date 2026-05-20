@@ -390,7 +390,11 @@ function addBody(slide, text, opts = {}) {
   const color = opts.color || BLACK;
   checkColor("addBody", color);
   if (!opts.display && (fontSize < 10 || fontSize > 12)) {
-    throw new Error(`[ps-pptx] addBody: fontSize ${fontSize} is outside the body range 10–12pt. For oversized stats/numerals, pass { display: true } and consider using FONT_MONO_LIGHT or FONT_TITLE directly via addBox.`);
+    throw new Error(
+      `[ps-pptx] addBody: fontSize ${fontSize} is outside the body range 10–12pt. ` +
+      `For data-dense slides (sources lists, deployment tables), use addBodyDense + markRole(slide, "data-dense"). ` +
+      `For oversized stats/numerals, pass { display: true }.`
+    );
   }
   const x = opts.x != null ? opts.x : MARGIN_L;
   const y = opts.y != null ? opts.y : 3.4;
@@ -411,6 +415,17 @@ function addBody(slide, text, opts = {}) {
     paraSpaceAfter: opts.paraSpaceAfter || 8,
     lineSpacingMultiple: opts.lineSpacingMultiple || 1.25,
   });
+}
+
+function addBodyDense(slide, text, opts = {}) {
+  if (!hasTag(slide, "data-dense")) {
+    throw new Error(`[ps-pptx] addBodyDense: requires markRole(slide, "data-dense") on this slide. Dense type (9–10pt) is reserved for sources lists and deployment tables; on a normal content slide, use addBody at 10–12pt instead.`);
+  }
+  const fontSize = opts.fontSize != null ? opts.fontSize : 10;
+  if (fontSize < 9 || fontSize > 10) {
+    throw new Error(`[ps-pptx] addBodyDense: fontSize ${fontSize} is outside the dense range 9–10pt.`);
+  }
+  return addBody(slide, text, { ...opts, fontSize, name: opts.name || "addBodyDense", display: true });
 }
 
 /**
@@ -531,7 +546,7 @@ module.exports = {
   // assets
   LOGO_WHITE, LOGO_COLOR, LOGO_BLACK, MEDIA,
   // helpers
-  addLogo, addFooter, addSubheadTag, addH1, addBody, addBox,
+  addLogo, addFooter, addSubheadTag, addH1, addBody, addBodyDense, addBox,
   // measurement (exported for qa.js + tests)
   _measureTitleFit, _titleFitSuggestions,
   // layout primitives

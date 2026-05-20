@@ -357,6 +357,33 @@ t("qa.js synthetic regex: parses addH1 throw message", () => {
   assert(+m[2] >= 3, "expected 3+ lines");
 });
 
+// ─── addBodyDense ────────────────────────────────────────────────────────────
+t("addBody: 9pt without display throws with addBodyDense hint", () => {
+  const slide = { addText: () => {}, addImage: () => {}, addShape: () => {} };
+  let caught;
+  try { T.addBody(slide, "x", { fontSize: 9 }); } catch (e) { caught = e; }
+  assert(caught, "expected throw");
+  assert(/addBodyDense/.test(caught.message), "expected addBodyDense hint: " + caught.message);
+  assert(/data-dense/.test(caught.message), "expected data-dense hint: " + caught.message);
+});
+
+t("addBodyDense: requires markRole(data-dense)", () => {
+  const slide = { addText: () => {}, addImage: () => {}, addShape: () => {} };
+  expectThrow(() => T.addBodyDense(slide, "x", { fontSize: 9 }), /requires markRole.*data-dense/);
+});
+
+t("addBodyDense: passes when role tag present", () => {
+  const slide = { addText: () => {}, addImage: () => {}, addShape: () => {} };
+  T.markRole(slide, "data-dense");
+  T.addBodyDense(slide, "x", { fontSize: 9, x: 0.667, y: 2, w: 6, h: 2 });
+});
+
+t("addBodyDense: rejects out-of-range font", () => {
+  const slide = { addText: () => {}, addImage: () => {}, addShape: () => {} };
+  T.markRole(slide, "data-dense");
+  expectThrow(() => T.addBodyDense(slide, "x", { fontSize: 8 }), /outside the dense range/);
+});
+
 // ─── color type-guard ────────────────────────────────────────────────────────
 t("checkColor: object input throws helpful message", () => {
   const slide = { addText: () => {}, addImage: () => {}, addShape: () => {} };
