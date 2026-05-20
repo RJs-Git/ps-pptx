@@ -101,6 +101,25 @@ patterns.anchorStat(newSlide(), T, {
   pageNum: pageNum++,
 });
 
+patterns.stackCommentary(newSlide(), T, {
+  subhead: "Pattern: stackCommentary",
+  title: "Margin migrates up the stack",
+  stack: [
+    { label: "Apps & assistants", fill: "red", emphasis: true },
+    { label: "Orchestration",     fill: "pink" },
+    { label: "Foundation models", fill: "gray-mid" },
+    { label: "Compute & data",    fill: "gray-light" },
+  ],
+  commentary: [
+    { stackIndex: 0, text: "Where customers feel value; where switching costs accrue." },
+    { stackIndex: 1, text: "Tool routing, eval, and observability — the new control plane." },
+    { stackIndex: 2, text: "Increasingly commoditized; pricing power erodes." },
+    { stackIndex: 3, text: "Capex-heavy; consolidation continues." },
+  ],
+  pullQuote: { text: "The middle of the stack is where 2026 budgets land.", source: "PS analyst desk" },
+  pageNum: pageNum++,
+});
+
 // Negative test: heatmap with too many rows must throw at pattern time.
 let heatmapThrew = false;
 try {
@@ -153,6 +172,25 @@ try {
 }
 if (!anchorThrew) {
   console.error("expected anchorStat to throw on long stat.value");
+  process.exit(1);
+}
+pres[Symbol.for('ps-pptx.pres-registry')].pop();
+
+// Negative test: stackCommentary with mismatched lengths must throw.
+let stackThrew = false;
+try {
+  patterns.stackCommentary(pres.addSlide(), T, {
+    title: "Should throw on mismatched lengths",
+    stack: [
+      { label: "a", fill: "red" }, { label: "b", fill: "pink" }, { label: "c", fill: "gray-mid" },
+    ],
+    commentary: [{ stackIndex: 0, text: "only one" }],
+  });
+} catch (e) {
+  stackThrew = /must equal stack.length/.test(e.message);
+}
+if (!stackThrew) {
+  console.error("expected stackCommentary to throw on length mismatch");
   process.exit(1);
 }
 pres[Symbol.for('ps-pptx.pres-registry')].pop();

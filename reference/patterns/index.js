@@ -20,6 +20,7 @@
  *   - journeyMap  : Horizontal step sequence with labels above and notes below
  *   - heatmap     : Capability heatmap (rows × cols, cells colored by score)
  *   - anchorStat  : Hero-stat slide (giant numeral + sub-stats)
+ *   - stackCommentary : Layered stack diagram + paired commentary
  */
 
 module.exports = {
@@ -30,4 +31,5 @@ module.exports = {
   journeyMap: require("./journeyMap.js"),
   heatmap: require("./heatmap.js"),
   anchorStat: require("./anchorStat.js"),
+  stackCommentary: require("./stackCommentary.js"),
 };
