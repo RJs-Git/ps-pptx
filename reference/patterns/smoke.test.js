@@ -88,6 +88,19 @@ patterns.heatmap(newSlide(), T, {
   pageNum: pageNum++,
 });
 
+patterns.anchorStat(newSlide(), T, {
+  subhead: "Pattern: anchorStat",
+  title: "AT&T's SLM-first rebuild proves the architecture",
+  stat: { value: "~90", unit: "%", caption: "of agent calls now resolved by an SLM" },
+  subStats: [
+    { value: "3.2x",  caption: "throughput vs prior LLM-only stack" },
+    { value: "$0.04", caption: "per resolved call" },
+    { value: "11mo",  caption: "to migrate" },
+  ],
+  footnote: "Source: AT&T engineering blog, 2026 Q1.",
+  pageNum: pageNum++,
+});
+
 // Negative test: heatmap with too many rows must throw at pattern time.
 let heatmapThrew = false;
 try {
@@ -124,6 +137,22 @@ try {
 }
 if (!matrixThrew) {
   console.error("expected matrix2x2 to throw on uniform severity");
+  process.exit(1);
+}
+pres[Symbol.for('ps-pptx.pres-registry')].pop();
+
+// Negative test: anchorStat with >8 char hero value must throw.
+let anchorThrew = false;
+try {
+  patterns.anchorStat(pres.addSlide(), T, {
+    title: "Should throw",
+    stat: { value: "999999999", caption: "too many digits" },
+  });
+} catch (e) {
+  anchorThrew = /exceeds 8 chars/.test(e.message);
+}
+if (!anchorThrew) {
+  console.error("expected anchorStat to throw on long stat.value");
   process.exit(1);
 }
 pres[Symbol.for('ps-pptx.pres-registry')].pop();

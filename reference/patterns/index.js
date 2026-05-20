@@ -19,6 +19,7 @@
  *   - beforeAfter : Two-column before/after comparison with labels
  *   - journeyMap  : Horizontal step sequence with labels above and notes below
  *   - heatmap     : Capability heatmap (rows × cols, cells colored by score)
+ *   - anchorStat  : Hero-stat slide (giant numeral + sub-stats)
  */
 
 module.exports = {
@@ -28,4 +29,5 @@ module.exports = {
   beforeAfter: require("./beforeAfter.js"),
   journeyMap: require("./journeyMap.js"),
   heatmap: require("./heatmap.js"),
+  anchorStat: require("./anchorStat.js"),
 };
