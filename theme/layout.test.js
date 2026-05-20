@@ -357,6 +357,23 @@ t("qa.js synthetic regex: parses addH1 throw message", () => {
   assert(+m[2] >= 3, "expected 3+ lines");
 });
 
+// ─── color type-guard ────────────────────────────────────────────────────────
+t("checkColor: object input throws helpful message", () => {
+  const slide = { addText: () => {}, addImage: () => {}, addShape: () => {} };
+  expectThrow(() => T.addBox(slide, { x: 0.667, y: 2, w: 4, h: 1, shape: "rect", fill: { wrong: "E90130" }, name: "x" }), /expected a hex string or .*object/);
+});
+
+t("checkColor: malformed hex string throws", () => {
+  const slide = { addText: () => {}, addImage: () => {}, addShape: () => {} };
+  expectThrow(() => T.addBox(slide, { x: 0.667, y: 2, w: 4, h: 1, shape: "rect", fill: "not-a-color", name: "x" }), /not a 6-digit hex|not in the PS palette/);
+});
+
+t("addBox: string fill auto-promotes to { color }", () => {
+  const slide = { addText: () => {}, addImage: () => {}, addShape: (kind, opts) => { slide._lastShape = opts; } };
+  T.addBox(slide, { x: 0.667, y: 2, w: 4, h: 1, shape: "rect", fill: T.RED, name: "x" });
+  assert(slide._lastShape && slide._lastShape.fill && slide._lastShape.fill.color === T.RED, "expected fill normalized to object: " + JSON.stringify(slide._lastShape && slide._lastShape.fill));
+});
+
 // ─── density / center-of-mass severity tiers ─────────────────────────────────
 t("validateLayout: density >=95% errors when not data-dense", () => {
   const s = mockSlide();

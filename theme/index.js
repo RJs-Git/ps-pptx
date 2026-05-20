@@ -214,13 +214,29 @@ function hasTag(slide, tag) {
 
 function checkColor(name, val) {
   if (val == null) return;
-  const v = String(val).replace(/^#/, "").toUpperCase();
+  if (typeof val !== "string") {
+    throw new Error(
+      `[ps-pptx] ${name}: expected a hex string (e.g., "E90130"), got ${typeof val} (${JSON.stringify(val).slice(0, 80)}). ` +
+      `If you meant to set a fill object, pass { color: "E90130" } as the fill option, not as the color string itself.`
+    );
+  }
+  const v = val.replace(/^#/, "").toUpperCase();
+  if (!/^[0-9A-F]{6}$/.test(v)) {
+    throw new Error(`[ps-pptx] ${name}: color "${val}" is not a 6-digit hex. Use a token (RED, RED_DARK, PINK, BLACK, WHITE, GRAY_MID, GRAY_LIGHT, CHART_GRAY).`);
+  }
   if (!ALLOWED_COLORS_SET.has(v)) {
     throw new Error(
       `[ps-pptx] ${name}: color "${val}" is not in the PS palette. ` +
       `Allowed: RED(E90130) RED_DARK(AE0021) PINK(FA8C9A) BLACK WHITE GRAY_MID(6B6B6B) GRAY_LIGHT(D9D9D9) CHART_GRAY(BBBBBB).`
     );
   }
+}
+
+function _normalizeColorArg(name, val) {
+  if (val == null) return val;
+  if (typeof val === "string") return { color: val };
+  if (typeof val === "object" && typeof val.color === "string") return val;
+  throw new Error(`[ps-pptx] ${name}: expected a hex string or { color, transparency? } object, got ${typeof val} (${JSON.stringify(val).slice(0, 80)}).`);
 }
 
 function checkFont(name, val) {
@@ -410,12 +426,14 @@ function addBox(slide, opts) {
   }
   checkBounds("addBox", opts.x, opts.y, opts.w, opts.h, opts);
   layout.recordPlacement(slide, "box", opts.name || "addBox", opts.x, opts.y, opts.w, opts.h, { allowOverlap: !!opts.allowOverlap, bottomBandPolicy: opts.bottomBandPolicy || (opts.fullBleed ? "fullBleed" : "enforce") });
-  if (opts.fill) checkColor("addBox.fill", opts.fill.color || opts.fill);
-  if (opts.line) checkColor("addBox.line", opts.line.color || opts.line);
+  const fill = _normalizeColorArg("addBox.fill", opts.fill);
+  const line = _normalizeColorArg("addBox.line", opts.line);
+  if (fill) checkColor("addBox.fill", fill.color);
+  if (line) checkColor("addBox.line", line.color);
   if (opts.shape) {
     slide.addShape(opts.shape, {
       x: opts.x, y: opts.y, w: opts.w, h: opts.h,
-      fill: opts.fill, line: opts.line,
+      fill, line,
     });
   }
   if (opts.text != null) {
