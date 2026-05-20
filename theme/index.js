@@ -193,11 +193,23 @@ function registerSlide(pres, slide) {
  * All other slides are treated as "content" and MUST have a footer.
  */
 function markRole(slide, role) {
-  const valid = ["cover", "section-divider", "thank-you", "end-card", "content"];
-  if (!valid.includes(role)) {
-    throw new Error(`[ps-pptx] markRole: role must be one of ${valid.join(", ")}, got "${role}"`);
+  const primaryRoles = ["cover", "section-divider", "thank-you", "end-card", "content"];
+  const tagRoles = ["data-dense"];
+  if (!primaryRoles.includes(role) && !tagRoles.includes(role)) {
+    throw new Error(`[ps-pptx] markRole: role must be one of ${[...primaryRoles, ...tagRoles].join(", ")}, got "${role}"`);
   }
-  meta(slide).role = role;
+  const m = meta(slide);
+  if (tagRoles.includes(role)) {
+    m.tags = m.tags || new Set();
+    m.tags.add(role);
+  } else {
+    m.role = role;
+  }
+}
+
+function hasTag(slide, tag) {
+  const m = slide[SLIDE_META];
+  return !!(m && m.tags && m.tags.has(tag));
 }
 
 function checkColor(name, val) {
@@ -510,5 +522,5 @@ module.exports = {
   grid: layout.grid,
   stack: layout.stack,
   // deck-level
-  markRole, instrument, validateDeck, writeDeck,
+  markRole, hasTag, instrument, validateDeck, writeDeck,
 };

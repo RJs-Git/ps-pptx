@@ -256,9 +256,10 @@ const layoutFindings = [];
         }
         if (parsed.warnings && parsed.warnings.length) {
           parsed.warnings.forEach((w) => {
-            const m = /^slide\s+(\d+):\s+balance\s+—\s+(.*)$/.exec(w);
-            layoutFindings.push({ slide: m ? +m[1] : null, kind: "balance", message: m ? m[2] : w, severity: "warning" });
-            warnings.push("balance: " + w);
+            const m = /^slide\s+(\d+):\s+(density|center-of-mass|balance)\s+—\s+(.*)$/.exec(w);
+            const kind = m ? m[2] : "balance";
+            layoutFindings.push({ slide: m ? +m[1] : null, kind, message: m ? m[3] : w, severity: "warning" });
+            warnings.push(`${kind}: ` + w);
           });
         }
         if (parsed.titleOverflows && parsed.titleOverflows.length) {

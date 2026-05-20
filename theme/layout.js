@@ -283,20 +283,31 @@ function validateLayout(pres, slides, geom) {
         });
         const contentArea = contentRect.w * contentRect.h;
         const fillRatio = filled / contentArea;
+        const slideMeta = slide[Symbol.for("ps-pptx.slide-meta")] || {};
+        const dataDense = !!(slideMeta.tags && slideMeta.tags.has("data-dense"));
         if (fillRatio < 0.15) {
-          warnings.push(`slide ${idx}: balance — content fills only ${(fillRatio * 100).toFixed(0)}% of the content area; slide looks empty`);
+          warnings.push(`slide ${idx}: density — content fills only ${(fillRatio * 100).toFixed(0)}% of the content area; slide looks empty`);
+        } else if (fillRatio >= 0.95) {
+          if (dataDense) {
+            warnings.push(`slide ${idx}: density — data-dense slide at ${(fillRatio * 100).toFixed(0)}% (info only)`);
+          } else {
+            errors.push(`slide ${idx}: density — content fills ${(fillRatio * 100).toFixed(0)}% of the content area (>=95%); slide is overstuffed. Trim content or markRole(slide, "data-dense") if intentional.`);
+          }
         } else if (fillRatio > 0.85) {
-          warnings.push(`slide ${idx}: balance — content fills ${(fillRatio * 100).toFixed(0)}% of the content area; slide looks crowded`);
+          if (!dataDense) {
+            warnings.push(`slide ${idx}: density — content fills ${(fillRatio * 100).toFixed(0)}% of the content area; slide looks crowded`);
+          }
         }
         if (cWeight > 0) {
           const com = { x: cxNum / cWeight, y: cyNum / cWeight };
           const center = { x: contentRect.x + contentRect.w / 2, y: contentRect.y + contentRect.h / 2 };
           const dx = (com.x - center.x) / contentRect.w;
           const dy = (com.y - center.y) / contentRect.h;
-          if (Math.abs(dx) > 0.25 || Math.abs(dy) > 0.25) {
-            warnings.push(
-              `slide ${idx}: balance — content center-of-mass offset ${(dx * 100).toFixed(0)}% horizontally, ${(dy * 100).toFixed(0)}% vertically from content-area center`
-            );
+          const adx = Math.abs(dx), ady = Math.abs(dy);
+          if (adx >= 0.30 || ady >= 0.30) {
+            errors.push(`slide ${idx}: center-of-mass — offset ${(dx * 100).toFixed(0)}% horizontally, ${(dy * 100).toFixed(0)}% vertically; slide is severely off-center.`);
+          } else if (adx > 0.25 || ady > 0.25) {
+            warnings.push(`slide ${idx}: center-of-mass — offset ${(dx * 100).toFixed(0)}% horizontally, ${(dy * 100).toFixed(0)}% vertically from content-area center`);
           }
         }
       }

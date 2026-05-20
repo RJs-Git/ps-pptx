@@ -215,6 +215,9 @@ t("validateLayout: chrome (logo, footer, page-num) is excluded from collision pa
   // than its reserved rect and the template intentionally coexists.
   layout.recordPlacement(s, "logo", "addLogo", 0.667, 0.667, 1.149, 0.624, { reserved: "logo" });
   layout.recordPlacement(s, "h1", "addH1", 0.667, 0.758, 12, 1.21);
+  // Body placed so center-of-mass is balanced (otherwise the tier-2 COM error
+  // unrelated to chrome would trigger).
+  layout.recordPlacement(s, "body", "addBody", 0.667, 2.5, 12, 3.5);
   layout.recordPlacement(s, "footer", "addFooter", 0.667, 6.875, 5.795, 0.18, { reserved: "footer", overFooter: true });
   const r = layout.validateLayout({}, [s], GEOM);
   eq(r.errors.length, 0, "chrome should not collide with content: " + r.errors.join(" | "));
@@ -352,6 +355,39 @@ t("qa.js synthetic regex: parses addH1 throw message", () => {
   assert(m, "regex should match addH1 throw message: " + msg);
   eq(+m[1], 38);
   assert(+m[2] >= 3, "expected 3+ lines");
+});
+
+// ─── density / center-of-mass severity tiers ─────────────────────────────────
+t("validateLayout: density >=95% errors when not data-dense", () => {
+  const s = mockSlide();
+  s[Symbol.for("ps-pptx.slide-meta")] = { role: "content" };
+  layout.recordPlacement(s, "body", "fillA", 0.667, 1, 12, 5.7);
+  const r = layout.validateLayout({}, [s], GEOM);
+  assert(r.errors.some((e) => /density/.test(e)), "expected density error: " + r.errors.join(" | "));
+});
+
+t("validateLayout: density >=95% with data-dense tag warns only", () => {
+  const s = mockSlide();
+  const m = { role: "content", tags: new Set(["data-dense"]) };
+  s[Symbol.for("ps-pptx.slide-meta")] = m;
+  layout.recordPlacement(s, "body", "fillA", 0.667, 1, 12, 5.7);
+  const r = layout.validateLayout({}, [s], GEOM);
+  assert(!r.errors.some((e) => /density/.test(e)), "data-dense should not error: " + r.errors.join(" | "));
+});
+
+t("validateLayout: center-of-mass >=30% errors", () => {
+  const s = mockSlide();
+  s[Symbol.for("ps-pptx.slide-meta")] = { role: "content" };
+  layout.recordPlacement(s, "body", "blob", 0.667, 5.5, 3, 1.0);
+  const r = layout.validateLayout({}, [s], GEOM);
+  assert(r.errors.some((e) => /center-of-mass/.test(e)), "expected center-of-mass error: " + r.errors.join(" | "));
+});
+
+t("markRole: accepts data-dense as a tag", () => {
+  const s = mockSlide();
+  T.markRole(s, "content");
+  T.markRole(s, "data-dense");
+  assert(T.hasTag(s, "data-dense"), "expected data-dense tag");
 });
 
 // ─── bottomBandPolicy ─────────────────────────────────────────────────────────
