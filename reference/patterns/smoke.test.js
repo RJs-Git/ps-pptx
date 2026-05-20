@@ -89,6 +89,26 @@ patterns.heatmap(newSlide(), T, {
   pageNum: pageNum++,
 });
 
+// Negative test: heatmap with too many rows must throw at pattern time.
+let heatmapThrew = false;
+try {
+  patterns.heatmap(pres.addSlide(), T, {
+    subhead: "negative test",
+    title: "Should throw — too many rows",
+    colHeaders: ["A","B","C","D"],
+    rowHeaders: ["1","2","3","4","5","6","7","8","9","10","11","12"],
+    scores: Array.from({length:12}, () => [0.5,0.5,0.5,0.5]),
+  });
+} catch (e) {
+  heatmapThrew = /too small after reserving the legend band|below the .* minimum/.test(e.message);
+}
+if (!heatmapThrew) {
+  console.error("expected heatmap to throw on overflow row count");
+  process.exit(1);
+}
+// Drop the half-built slide so validateDeck doesn't see it.
+pres[Symbol.for('ps-pptx.pres-registry')].pop();
+
 let result;
 try {
   result = T.validateDeck(pres, { silent: true });
