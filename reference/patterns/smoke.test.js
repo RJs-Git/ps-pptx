@@ -32,12 +32,11 @@ patterns.matrix2x2(newSlide(), T, {
   xAxis: { low: "Low investment", high: "High investment" },
   yAxis: { low: "Low capability", high: "High capability" },
   quadrants: {
-    tl: { label: "Hidden gems",  body: "Underfunded but capable." },
-    tr: { label: "Strongholds",  body: "Well-funded and capable." },
-    bl: { label: "Cut",          body: "Underfunded and weak." },
-    br: { label: "Risky bets",   body: "Heavily funded but unproven." },
+    tl: { label: "Hidden gems",  body: "Underfunded but capable.",   severity: "medium" },
+    tr: { label: "Strongholds",  body: "Well-funded and capable.",   severity: "high" },
+    bl: { label: "Cut",          body: "Underfunded and weak.",      severity: "low" },
+    br: { label: "Risky bets",   body: "Heavily funded but unproven.",severity: "medium" },
   },
-  highlight: "tr",
   pageNum: pageNum++,
 });
 
@@ -107,6 +106,26 @@ if (!heatmapThrew) {
   process.exit(1);
 }
 // Drop the half-built slide so validateDeck doesn't see it.
+pres[Symbol.for('ps-pptx.pres-registry')].pop();
+
+// Negative test: matrix2x2 with uniform severity must throw.
+let matrixThrew = false;
+try {
+  patterns.matrix2x2(pres.addSlide(), T, {
+    title: "Uniform severity should throw",
+    xAxis: { low: "lo", high: "hi" }, yAxis: { low: "lo", high: "hi" },
+    quadrants: {
+      tl: { label: "a", severity: "high" }, tr: { label: "b", severity: "high" },
+      bl: { label: "c", severity: "high" }, br: { label: "d", severity: "high" },
+    },
+  });
+} catch (e) {
+  matrixThrew = /share severity .* visual signal is wasted/.test(e.message);
+}
+if (!matrixThrew) {
+  console.error("expected matrix2x2 to throw on uniform severity");
+  process.exit(1);
+}
 pres[Symbol.for('ps-pptx.pres-registry')].pop();
 
 let result;

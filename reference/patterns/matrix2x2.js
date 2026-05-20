@@ -7,43 +7,55 @@
  *   xAxis:    { low: string, high: string, label?: string },
  *   yAxis:    { low: string, high: string, label?: string },
  *   quadrants: {
- *     tl: { label: string, body?: string },  // top-left  (low-x, high-y)
- *     tr: { label: string, body?: string },  // top-right (high-x, high-y)
- *     bl: { label: string, body?: string },
- *     br: { label: string, body?: string },
+ *     tl: { label: string, body?: string, severity: "high"|"medium"|"low", fill?: string },
+ *     tr: { ... },
+ *     bl: { ... },
+ *     br: { ... },
  *   },
- *   highlight?: "tl" | "tr" | "bl" | "br",   // tint with PINK fill
  *   pageNum?: number,
  * }
+ *
+ * severity → fill: high → PINK, medium → GRAY_LIGHT, low → WHITE.
+ * Per-quadrant `fill` overrides the default mapping.
+ * Throws when all four quadrants share the same severity (visual signal wasted).
  */
 module.exports = function matrix2x2(slide, T, content) {
-  const { addH1, addBox, addBody, addSubheadTag, addFooter, grid, RED, PINK, BLACK, WHITE, GRAY_LIGHT, GRAY_MID, FONT_TITLE, FONT_BODY, FONT_MONO, MARGIN_L, CONTENT_W } = T;
+  const { addH1, addBox, addBody, addSubheadTag, addFooter, grid, PINK, GRAY_LIGHT, GRAY_MID, BLACK, WHITE, FONT_TITLE, FONT_MONO, MARGIN_L, CONTENT_W } = T;
   if (!content || !content.title || !content.quadrants) {
     throw new Error("[ps-pptx/patterns/matrix2x2] requires { title, quadrants }");
+  }
+  const keys = ["tl", "tr", "bl", "br"];
+  const sevAllowed = new Set(["high", "medium", "low"]);
+  keys.forEach((k) => {
+    const q = content.quadrants[k];
+    if (!q || !q.label) throw new Error(`[ps-pptx/patterns/matrix2x2] quadrants.${k}.label is required`);
+    if (!sevAllowed.has(q.severity)) {
+      throw new Error(`[ps-pptx/patterns/matrix2x2] quadrants.${k}.severity must be "high" | "medium" | "low" (got ${JSON.stringify(q.severity)}).`);
+    }
+  });
+  const sevs = keys.map((k) => content.quadrants[k].severity);
+  if (new Set(sevs).size === 1) {
+    throw new Error(`[ps-pptx/patterns/matrix2x2] all four quadrants share severity "${sevs[0]}" — the visual signal is wasted. Differentiate severities, or use a list pattern instead.`);
   }
 
   if (content.subhead) addSubheadTag(slide, content.subhead);
   addH1(slide, content.title, { fontSize: 36 });
 
-  // Axis label gutter widths
-  const axisGutter = 0.7;     // left strip for y-axis labels
-  const axisLabelH = 0.45;    // bottom strip for x-axis labels
+  const axisGutter = 0.7;
+  const axisLabelH = 0.45;
   const region = {
     x: MARGIN_L + axisGutter,
     y: 2.4,
     w: CONTENT_W - axisGutter,
-    h: 6.6 - 2.4 - axisLabelH,    // ~3.75 tall
+    h: 6.6 - 2.4 - axisLabelH,
   };
 
-  // Y-axis: low (bottom) → high (top), drawn in left gutter.
   addBox(slide, {
     x: MARGIN_L, y: region.y, w: axisGutter - 0.1, h: region.h,
     text: `${content.yAxis.high}\n\n\n\n\n${content.yAxis.low}`,
     textOpts: { fontFace: FONT_MONO, fontSize: 9, color: GRAY_MID, align: "right", valign: "top" },
     name: "matrix2x2.yAxis",
   });
-
-  // X-axis: low (left) → high (right), drawn below the matrix.
   addBox(slide, {
     x: region.x, y: region.y + region.h + 0.1, w: region.w, h: axisLabelH - 0.1,
     text: `${content.xAxis.low}                                                                ${content.xAxis.high}`,
@@ -51,22 +63,27 @@ module.exports = function matrix2x2(slide, T, content) {
     name: "matrix2x2.xAxis",
   });
 
+  function fillFor(q) {
+    if (q.fill) return q.fill;
+    if (q.severity === "high") return PINK;
+    if (q.severity === "medium") return GRAY_LIGHT;
+    return WHITE;
+  }
+
   const cellMap = { tl: { c: 0, r: 0 }, tr: { c: 1, r: 0 }, bl: { c: 0, r: 1 }, br: { c: 1, r: 1 } };
-  const items = Object.keys(cellMap).map((key) => {
+  const items = keys.map((key) => {
     const q = content.quadrants[key];
     const { c, r } = cellMap[key];
-    const isHighlighted = content.highlight === key;
     return {
       col: c, row: r,
       render: (rect) => {
         addBox(slide, {
           x: rect.x, y: rect.y, w: rect.w, h: rect.h,
           shape: "rect",
-          fill: { color: isHighlighted ? PINK : GRAY_LIGHT },
+          fill: { color: fillFor(q) },
           line: { color: GRAY_MID, width: 0.5 },
           name: `matrix2x2.cell[${key}]`,
         });
-        // Label
         addBox(slide, {
           x: rect.x + 0.2, y: rect.y + 0.15, w: rect.w - 0.4, h: 0.4,
           text: q.label,
